@@ -274,6 +274,20 @@
         .pie-swap     { background: #222; color: #fff; }
         .pie-continue { background: #eee; color: #333; }
 
+        #home-overlay {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            z-index: 165; display: flex; align-items: center; justify-content: center;
+            background: rgba(244,244,244,0.92);
+        }
+        #home-bubble {
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 12px 50px rgba(0,0,0,0.22);
+            padding: 32px 40px; text-align: center; max-width: 460px; width: 90%;
+        }
+        #home-bubble h3 { font-size: 1.2rem; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 12px; }
+        #home-bubble p  { color: #555; margin-bottom: 24px; line-height: 1.6; }
+        #home-btn-row { display: flex; gap: 12px; }
+
         /* PEEK RESULT FLASH */
         #peek-flash {
             position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
@@ -411,6 +425,19 @@
     </div>
 </div>
 
+<!-- PIE HOME (PvP only, shown to P2 after PIE_DECISION) -->
+<div id="home-overlay" class="hidden">
+    <div id="home-bubble">
+        <h3>Choose Your Home Edge</h3>
+        <p>As the E–W player, pick which column you will seed from.<br>
+           Your <b>target</b> will be the opposite column.</p>
+        <div id="home-btn-row">
+            <button class="pie-btn pie-swap"     onclick="sendHomeChoice(0)">COL 1 &rarr; COL 9</button>
+            <button class="pie-btn pie-continue" onclick="sendHomeChoice(8)">COL 9 &rarr; COL 1</button>
+        </div>
+    </div>
+</div>
+
 <!-- PEEK FLASH -->
 <div id="peek-flash" class="hidden"></div>
 
@@ -531,11 +558,17 @@ function handlePhaseUI() {
     const phase = state.phase;
 
     // PIE_DECISION: show overlay to P2
-    const pieOverlay = document.getElementById('pie-overlay');
+    const pieOverlay  = document.getElementById('pie-overlay');
+    const homeOverlay = document.getElementById('home-overlay');
     if (phase === 'PIE_DECISION' && myPlayer === 2) {
         pieOverlay.classList.remove('hidden');
     } else {
         pieOverlay.classList.add('hidden');
+    }
+    if (phase === 'PIE_HOME' && myPlayer === 2) {
+        homeOverlay.classList.remove('hidden');
+    } else {
+        homeOverlay.classList.add('hidden');
     }
 
     // GAME_OVER
@@ -564,6 +597,11 @@ function sendPieDecision(swap) {
     document.getElementById('pie-overlay').classList.add('hidden');
 }
 
+function sendHomeChoice(homeCol) {
+    socket.emit('action', { roomId, type: 'homeChoice', homeCol });
+    document.getElementById('home-overlay').classList.add('hidden');
+}
+
 // ── STATUS MSG ───────────────────────────────────────────────────
 function updateStatusMsg() {
     if (!state) return;
@@ -574,9 +612,11 @@ function updateStatusMsg() {
     const isReconMe  = state.reconWinner === myPlayer;
 
     if (phase === 'PIE_PLACE') {
-        el.innerText = isMe ? 'PLACE OPENING TILE (ROW 1)' : 'OPPONENT PLACING...';
+        el.innerText = isMe ? 'PLACE OPENING TILE (ROW 1, COLS 3-7)' : 'OPPONENT PLACING...';
     } else if (phase === 'PIE_DECISION') {
         el.innerText = myPlayer === 2 ? 'SWAP OR CONTINUE?' : 'OPPONENT DECIDING...';
+    } else if (phase === 'PIE_HOME') {
+        el.innerText = myPlayer === 2 ? 'CHOOSE YOUR HOME EDGE' : 'OPPONENT CHOOSING EDGE...';
     } else if (phase === 'MAIN') {
         el.innerText = isMe ? 'YOUR TURN' : 'OPPONENT\'S TURN';
     } else if (phase === 'REVEAL_RULE') {
@@ -618,7 +658,9 @@ const HOME_MAX = 6;
 function getValidPlacements(board, player) {
     const valid = new Set();
     const homeRow = player === 1 ? 0 : null;
-    const homeCol = player === 2 ? 0 : null;
+    // p2HomeCol is null until PIE_HOME resolves; fall back to 0 so the function
+    // never crashes during PIE_PLACE/PIE_DECISION phases.
+    const homeCol = player === 2 ? (state?.p2HomeCol ?? 0) : null;
     if (homeRow !== null) {
         for (let c = HOME_MIN; c <= HOME_MAX; c++)
             if (board[homeRow][c].tiles.length === 0) valid.add(`${homeRow},${c}`);
@@ -724,15 +766,25 @@ function drawGrid(validPlace, validStack, revealHL, reconHL) {
     ctx.fillStyle = 'rgba(220,235,255,0.10)';
     ctx.fillRect(MARGIN, MARGIN + CELL * 8, CELL * 9, CELL);
 
-    // P2 home col: tint full col dimly, then brighten the active central zone
-    ctx.fillStyle = 'rgba(255,235,200,0.10)';
-    ctx.fillRect(MARGIN, MARGIN, CELL, CELL * 9);
-    ctx.fillStyle = 'rgba(255,235,200,0.28)';
-    ctx.fillRect(MARGIN, MARGIN + HOME_MIN * CELL, CELL, CELL * (HOME_MAX - HOME_MIN + 1));
-
-    // P2 target col (col 8): faint tint
-    ctx.fillStyle = 'rgba(255,235,200,0.10)';
-    ctx.fillRect(MARGIN + CELL * 8, MARGIN, CELL, CELL * 9);
+    // P2 home/target: dynamic based on p2HomeCol (null = not yet chosen, show both dimly)
+    const hc  = state?.p2HomeCol ?? null;
+    const tgt = hc === null ? null : (hc === 0 ? 8 : 0);
+    if (hc === null) {
+        // Before choice: tint both edges equally to indicate either is possible
+        ctx.fillStyle = 'rgba(255,235,200,0.10)';
+        ctx.fillRect(MARGIN, MARGIN, CELL, CELL * 9);
+        ctx.fillStyle = 'rgba(255,235,200,0.10)';
+        ctx.fillRect(MARGIN + CELL * 8, MARGIN, CELL, CELL * 9);
+    } else {
+        // Home col: bright central zone
+        ctx.fillStyle = 'rgba(255,235,200,0.10)';
+        ctx.fillRect(MARGIN + hc * CELL, MARGIN, CELL, CELL * 9);
+        ctx.fillStyle = 'rgba(255,235,200,0.28)';
+        ctx.fillRect(MARGIN + hc * CELL, MARGIN + HOME_MIN * CELL, CELL, CELL * (HOME_MAX - HOME_MIN + 1));
+        // Target col: faint
+        ctx.fillStyle = 'rgba(255,235,200,0.10)';
+        ctx.fillRect(MARGIN + tgt * CELL, MARGIN, CELL, CELL * 9);
+    }
 
     // Grid lines
     ctx.strokeStyle = '#ddd';
@@ -776,7 +828,14 @@ function drawLabels() {
     ctx.fillStyle = '#6699cc';
     ctx.fillText('↓ P1', MARGIN / 2, MARGIN - 14);
     ctx.fillStyle = '#cc9944';
-    ctx.fillText('→ P2', MARGIN - 16, MARGIN / 2);
+    const hcLabel = state?.p2HomeCol ?? null;
+    if (hcLabel === null) {
+        ctx.fillText('P2', MARGIN - 16, MARGIN / 2);
+    } else if (hcLabel === 0) {
+        ctx.fillText('→ P2', MARGIN - 16, MARGIN / 2);
+    } else {
+        ctx.fillText('P2 ←', MARGIN + CELL * 9 + 16, MARGIN / 2);
+    }
 }
 
 function drawCell(r, c, cell, validPlace, validStack, revealHL, reconHL) {
@@ -968,7 +1027,7 @@ function handleCellClick(r, c, clientX, clientY) {
     const actions = [];
 
     if (phase === 'PIE_PLACE' && state.currentPlayer === myPlayer) {
-        if (r === 0 && cell.tiles.length === 0)
+        if (r === 0 && c >= HOME_MIN && c <= HOME_MAX && cell.tiles.length === 0)
             actions.push({ label: 'PLACE', cls: 'b-place', fn: () => emit('place', r, c) });
 
     } else if (phase === 'MAIN' && state.currentPlayer === myPlayer) {
