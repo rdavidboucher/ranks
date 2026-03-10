@@ -611,15 +611,21 @@ function updateLog() {
 }
 
 // ── VALID MOVES (CLIENT-SIDE MIRROR OF SERVER LOGIC) ────────────
+// Home edge seeding is restricted to central 5 cells (cols/rows 3-7 in display = indices 2-6).
+const HOME_MIN = 2;
+const HOME_MAX = 6;
+
 function getValidPlacements(board, player) {
     const valid = new Set();
     const homeRow = player === 1 ? 0 : null;
     const homeCol = player === 2 ? 0 : null;
     if (homeRow !== null) {
-        for (let c = 0; c < 9; c++) if (board[homeRow][c].tiles.length === 0) valid.add(`${homeRow},${c}`);
+        for (let c = HOME_MIN; c <= HOME_MAX; c++)
+            if (board[homeRow][c].tiles.length === 0) valid.add(`${homeRow},${c}`);
     }
     if (homeCol !== null) {
-        for (let r = 0; r < 9; r++) if (board[r][homeCol].tiles.length === 0) valid.add(`${r},${homeCol}`);
+        for (let r = HOME_MIN; r <= HOME_MAX; r++)
+            if (board[r][homeCol].tiles.length === 0) valid.add(`${r},${homeCol}`);
     }
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
@@ -670,7 +676,8 @@ function draw() {
         revealHL = new Set(), reconHL = new Set();
 
     if (phase === 'PIE_PLACE' && isMyTurn) {
-        for (let c = 0; c < 9; c++) if (board[0][c].tiles.length === 0) validPlace.add(`0,${c}`);
+        for (let c = HOME_MIN; c <= HOME_MAX; c++)
+            if (board[0][c].tiles.length === 0) validPlace.add(`0,${c}`);
     } else if (phase === 'MAIN' && isMyTurn && state.supplies[myPlayer] > 0) {
         validPlace = getValidPlacements(board, myPlayer);
         validStack = getValidStacks(board, myPlayer);
@@ -707,15 +714,25 @@ function drawEmptyBoard() {
 }
 
 function drawGrid(validPlace, validStack, revealHL, reconHL) {
-    // Background tints for edges
-    ctx.fillStyle = 'rgba(220,235,255,0.22)';
-    ctx.fillRect(MARGIN, MARGIN, CELL * 9, CELL);          // Row 0 (P1 home)
-    ctx.fillStyle = 'rgba(220,235,255,0.12)';
-    ctx.fillRect(MARGIN, MARGIN + CELL * 8, CELL * 9, CELL); // Row 8 (P1 target)
-    ctx.fillStyle = 'rgba(255,235,200,0.22)';
-    ctx.fillRect(MARGIN, MARGIN, CELL, CELL * 9);           // Col 0 (P2 home)
-    ctx.fillStyle = 'rgba(255,235,200,0.12)';
-    ctx.fillRect(MARGIN + CELL * 8, MARGIN, CELL, CELL * 9); // Col 8 (P2 target)
+    // P1 home row: tint full row dimly, then brighten the active central zone
+    ctx.fillStyle = 'rgba(220,235,255,0.10)';
+    ctx.fillRect(MARGIN, MARGIN, CELL * 9, CELL);
+    ctx.fillStyle = 'rgba(220,235,255,0.28)';
+    ctx.fillRect(MARGIN + HOME_MIN * CELL, MARGIN, CELL * (HOME_MAX - HOME_MIN + 1), CELL);
+
+    // P1 target row (row 8): faint tint
+    ctx.fillStyle = 'rgba(220,235,255,0.10)';
+    ctx.fillRect(MARGIN, MARGIN + CELL * 8, CELL * 9, CELL);
+
+    // P2 home col: tint full col dimly, then brighten the active central zone
+    ctx.fillStyle = 'rgba(255,235,200,0.10)';
+    ctx.fillRect(MARGIN, MARGIN, CELL, CELL * 9);
+    ctx.fillStyle = 'rgba(255,235,200,0.28)';
+    ctx.fillRect(MARGIN, MARGIN + HOME_MIN * CELL, CELL, CELL * (HOME_MAX - HOME_MIN + 1));
+
+    // P2 target col (col 8): faint tint
+    ctx.fillStyle = 'rgba(255,235,200,0.10)';
+    ctx.fillRect(MARGIN + CELL * 8, MARGIN, CELL, CELL * 9);
 
     // Grid lines
     ctx.strokeStyle = '#ddd';

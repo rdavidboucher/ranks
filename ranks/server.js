@@ -136,6 +136,11 @@ function hasPath(board, player) {
     return false;
 }
 
+// Home edge seeding is restricted to the central 5 cells (indices 2-6) to prevent
+// uncontested edge-corridor wins. Expansion from existing tiles is unrestricted.
+const HOME_MIN = 2;  // inclusive, 0-indexed
+const HOME_MAX = 6;  // inclusive, 0-indexed
+
 function getValidMoves(board, player) {
     const placementSet = new Map();
     const stacks = [];
@@ -143,12 +148,12 @@ function getValidMoves(board, player) {
     const homeCol = player === PB ? 0 : null;
 
     if (homeRow !== null) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
+        for (let c = HOME_MIN; c <= HOME_MAX; c++) {
             if (board[homeRow][c].tiles.length === 0) placementSet.set(`${homeRow},${c}`, [homeRow, c]);
         }
     }
     if (homeCol !== null) {
-        for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let r = HOME_MIN; r <= HOME_MAX; r++) {
             if (board[r][homeCol].tiles.length === 0) placementSet.set(`${r},${homeCol}`, [r, homeCol]);
         }
     }
@@ -596,9 +601,9 @@ io.on('connection', (socket) => {
         const playerNum = socket.id === room.p1 ? PA : (socket.id === room.p2 ? PB : null);
         if (playerNum === null) return;
 
-        // PIE_PLACE: P1 places opening tile in row 0
+        // PIE_PLACE: P1 places opening tile in row 0, restricted to central columns (HOME_MIN..HOME_MAX)
         if (state.phase === 'PIE_PLACE' && playerNum === PA && type === 'place') {
-            if (r !== 0 || state.board[r][c].tiles.length > 0) return;
+            if (r !== 0 || c < HOME_MIN || c > HOME_MAX || state.board[r][c].tiles.length > 0) return;
             const tile = state.supplies[PA].shift();
             tile.faceUp = false;
             state.board[r][c].tiles.push(tile);
