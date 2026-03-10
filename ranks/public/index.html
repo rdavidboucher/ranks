@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RANKS</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg:      #f4f4f4;
+            --ui-bg:   #ffffff;
+            --shadow:  0 4px 20px rgba(0,0,0,0.13);
+            --gold:    #d4af37;
+            --red:     #d9534f;
+            --text:    #333;
+            --p1-bg:   #ffffff;
+            --p1-bd:   #1a1a1a;
+            --p2-bg:   #1a1a1a;
+            --p2-text: #ffffff;
+            --valid-place: rgba(80,180,80,0.55);
+            --valid-stack: rgba(60,120,220,0.55);
+            --reveal-hl:   rgba(212,175,55,0.7);
+            --recon-hl:    rgba(180,60,200,0.6);
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        h1 {
+            margin: 36px 0 32px;
+            letter-spacing: 10px;
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 900;
+            text-transform: uppercase;
+            color: #222;
+            text-align: center;
+        }
+        .hidden { display: none !important; }
+        .overlay {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: rgba(244,244,244,0.98);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 200;
+        }
+
+        /* ── LOBBY ── */
+        #lobby-screen input {
+            padding: 18px; font-size: 1.4rem; text-align: center;
+            border: 2px solid #333; margin-bottom: 16px;
+            border-radius: 6px; width: 300px; max-width: 80%;
+            text-transform: uppercase; letter-spacing: 4px;
+        }
+        .big-btn {
+            padding: 22px 55px; font-size: 1.6rem;
+            background: #222; color: #fff; border: none;
+            border-radius: 8px; cursor: pointer;
+            transition: transform 0.1s; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 2px;
+        }
+        .big-btn:hover { transform: scale(1.04); }
+        #lobby-create {
+            margin-top: 18px;
+            padding: 14px 36px; font-size: 1rem;
+            background: var(--ui-bg); color: #333;
+            border: 2px solid #ccc; border-radius: 8px;
+            cursor: pointer; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1px;
+            transition: transform 0.1s;
+        }
+        #lobby-create:hover { transform: scale(1.03); border-color: #999; }
+        #lobby-hint {
+            margin-top: 20px; color: #888; font-size: 0.9rem;
+            text-align: center; max-width: 340px; line-height: 1.5;
+        }
+        #lobby-msg { color: var(--red); margin-top: 22px; font-weight: bold; font-size: 1.1rem; }
+
+        /* ── GAME CONTAINER ── */
+        #game-container {
+            display: flex; flex-direction: column;
+            align-items: center; width: 100%;
+            max-width: 1200px; padding-bottom: 80px;
+        }
+
+        /* HUD */
+        #hud {
+            position: absolute; top: 28px; right: 28px;
+            background: var(--ui-bg); padding: 18px 22px;
+            border-radius: 12px; box-shadow: var(--shadow);
+            z-index: 10; min-width: 220px; font-size: 0.9rem;
+        }
+        .hud-row { display: flex; justify-content: space-between; margin-bottom: 7px; gap: 16px; }
+        .hud-row.header {
+            border-bottom: 1px solid #eee; margin-bottom: 10px;
+            padding-bottom: 7px; font-weight: 900; font-size: 0.8rem;
+            text-transform: uppercase; letter-spacing: 1px; color: #999;
+        }
+        .p1-c { color: #000; font-weight: 700; }
+        .p2-c { color: #555; font-weight: 700; }
+        #player-identity {
+            margin-top: 13px; padding-top: 10px;
+            border-top: 1px solid #eee; text-align: center;
+            font-weight: 900; text-transform: uppercase;
+            color: var(--gold); font-size: 0.85rem; letter-spacing: 1px;
+        }
+
+        /* TOP BAR */
+        #top-bar {
+            background: var(--ui-bg); padding: 13px 36px;
+            border-radius: 50px; box-shadow: var(--shadow);
+            display: flex; gap: 14px; align-items: center;
+            justify-content: center; z-index: 10;
+            margin-bottom: 32px; white-space: nowrap; max-width: 95%;
+        }
+        .bar-btn {
+            background: #222; color: #fff; border: none;
+            padding: 11px 32px; border-radius: 24px;
+            font-weight: 700; cursor: pointer;
+            text-transform: uppercase; font-size: 0.95rem;
+            letter-spacing: 1px; transition: all 0.2s; flex-shrink: 0;
+        }
+        .bar-btn:hover { transform: scale(1.05); }
+        .bar-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .bar-btn.secondary { background: #eee; color: #333; }
+        .bar-btn.gold-active {
+            background: var(--gold) !important;
+            color: #fff !important;
+            box-shadow: 0 4px 14px rgba(212,175,55,0.4);
+            transform: scale(1.05);
+        }
+        #status-msg {
+            font-weight: bold; color: #555;
+            text-transform: uppercase; font-size: 0.95rem;
+            min-width: 160px; text-align: center;
+            flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* BOARD */
+        #canvas-wrapper {
+            position: relative;
+            width: min(92vmin, 760px);
+            height: min(92vmin, 760px);
+            background: var(--ui-bg);
+            box-shadow: 0 12px 60px rgba(0,0,0,0.10);
+            border-radius: 12px;
+            margin-bottom: 28px;
+        }
+        canvas { width: 100%; height: 100%; cursor: pointer; border-radius: 12px; display: block; }
+
+        /* BUBBLE MENU */
+        #bubble-menu {
+            position: absolute; background: white;
+            padding: 10px; border-radius: 10px;
+            box-shadow: 0 5px 28px rgba(0,0,0,0.22);
+            display: flex; gap: 8px; z-index: 100;
+            pointer-events: auto; white-space: nowrap;
+            --arrow-pos: 50%;
+        }
+        #bubble-menu::after {
+            content: ''; position: absolute; bottom: -7px;
+            left: var(--arrow-pos); transform: translateX(-50%);
+            border-width: 7px 7px 0;
+            border-style: solid;
+            border-color: white transparent transparent transparent;
+        }
+        .bubble-btn {
+            border: none; padding: 11px 18px; border-radius: 6px;
+            font-weight: bold; cursor: pointer; font-size: 0.88rem;
+            text-transform: uppercase; transition: filter 0.15s;
+        }
+        .bubble-btn:hover { filter: brightness(0.9); }
+        .b-place  { background: #eee; color: #333; }
+        .b-stack  { background: #d0e8ff; color: #1a4a8a; }
+        .b-reveal { background: var(--gold); color: #fff; }
+        .b-peek   { background: #d8b4fe; color: #4a1080; }
+
+        /* COMBAT LOG */
+        #combat-log {
+            background: var(--ui-bg);
+            border-left: 4px solid var(--red);
+            border-radius: 8px;
+            padding: 14px 20px;
+            max-width: min(92vmin, 760px);
+            width: 100%;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            color: #444;
+            margin-bottom: 20px;
+            min-height: 60px;
+        }
+        #combat-log .log-title {
+            font-weight: 900; text-transform: uppercase;
+            letter-spacing: 1px; color: #222; font-size: 0.8rem;
+            margin-bottom: 6px;
+        }
+
+        /* CHEAT SHEET */
+        #cheat-sheet {
+            background: white; padding: 28px;
+            border-radius: 12px; box-shadow: 0 2px 14px rgba(0,0,0,0.05);
+            max-width: min(92vmin, 760px); width: 100%;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 24px; font-size: 0.92rem; color: #555;
+        }
+        .cs-col h4 {
+            margin: 0 0 12px; border-bottom: 2px solid #eee;
+            padding-bottom: 7px; color: #222; font-size: 0.9rem;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .cs-item { display: flex; justify-content: space-between; margin-bottom: 7px; gap: 12px; }
+        .full-rules {
+            grid-column: 1 / -1; text-align: center;
+            margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;
+        }
+        .full-rules a {
+            color: #555; text-decoration: none; font-weight: bold;
+            text-transform: uppercase; font-size: 0.88rem; letter-spacing: 1px;
+        }
+        .full-rules a:hover { color: #000; text-decoration: underline; }
+
+        /* GAME OVER */
+        #game-over {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            z-index: 150; display: flex; align-items: flex-start; justify-content: center;
+            pointer-events: none;
+        }
+        #go-backdrop { position: absolute; top:0; left:0; right:0; bottom:0; background: rgba(255,255,255,0.18); pointer-events: auto; }
+        #go-bubble {
+            position: relative; margin-top: 160px;
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 12px 50px rgba(0,0,0,0.25);
+            padding: 28px 36px 24px; text-align: center;
+            max-width: 380px; width: 90%; pointer-events: auto;
+        }
+        #go-title { font-weight: 900; font-size: 1.3rem; letter-spacing: 3px; text-transform: uppercase; color: #222; margin-bottom: 8px; }
+        #go-reason { font-size: 1rem; color: #555; margin-bottom: 20px; }
+        #go-btn-row { display: flex; gap: 10px; }
+        .go-btn {
+            flex: 1; padding: 12px 16px; border: none; border-radius: 8px;
+            font-weight: 700; font-size: 0.85rem; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 1px; transition: transform 0.1s;
+        }
+        .go-btn:hover { transform: scale(1.03); }
+        .go-btn-primary   { background: #222; color: #fff; }
+        .go-btn-secondary { background: #eee; color: #333; }
+
+        /* PIE DECISION OVERLAY */
+        #pie-overlay {
+            position: fixed; top:0; left:0; right:0; bottom:0;
+            z-index: 160; display: flex; align-items: center; justify-content: center;
+            background: rgba(244,244,244,0.92);
+        }
+        #pie-bubble {
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 12px 50px rgba(0,0,0,0.22);
+            padding: 32px 40px; text-align: center; max-width: 420px; width: 90%;
+        }
+        #pie-bubble h3 { font-size: 1.2rem; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 12px; }
+        #pie-bubble p  { color: #555; margin-bottom: 24px; line-height: 1.6; }
+        #pie-btn-row { display: flex; gap: 12px; }
+        .pie-btn {
+            flex: 1; padding: 16px; border: none; border-radius: 10px;
+            font-weight: 900; font-size: 1rem; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 2px; transition: transform 0.1s;
+        }
+        .pie-btn:hover { transform: scale(1.04); }
+        .pie-swap     { background: #222; color: #fff; }
+        .pie-continue { background: #eee; color: #333; }
+
+        /* PEEK RESULT FLASH */
+        #peek-flash {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            background: #222; color: #fff;
+            padding: 16px 36px; border-radius: 40px;
+            font-weight: 900; font-size: 1.1rem;
+            letter-spacing: 2px; z-index: 300;
+            box-shadow: 0 6px 28px rgba(0,0,0,0.3);
+            transition: opacity 0.4s;
+        }
+
+        /* WAITING INDICATOR */
+        #waiting-msg {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            background: var(--ui-bg); color: #555;
+            padding: 14px 32px; border-radius: 40px;
+            font-weight: 700; font-size: 1rem;
+            letter-spacing: 1px; z-index: 200;
+            box-shadow: var(--shadow);
+        }
+
+        /* MOBILE */
+        @media (max-width: 860px) {
+            h1 { font-size: clamp(2rem, 9vw, 3rem); margin: 18px 0; }
+            #hud { position: relative; top: auto; right: auto; width: 92%; min-width: auto; margin-bottom: 18px; }
+            #top-bar { width: 95%; box-sizing: border-box; padding: 10px 10px; gap: 5px; margin-bottom: 20px; }
+            .bar-btn { padding: 10px 14px; font-size: 0.78rem; }
+            #status-msg { font-size: 0.78rem; min-width: 0; }
+            #canvas-wrapper { width: 96vmin; height: 96vmin; }
+            #go-bubble { margin-top: 100px; padding: 22px 20px 18px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOBBY -->
+<div id="lobby-screen" class="overlay">
+    <h1 style="margin-bottom:48px; letter-spacing:12px;">RANKS</h1>
+    <input type="text" id="room-input" placeholder="ROOM CODE" autocomplete="off"
+           onkeydown="if(event.key==='Enter') joinGame()"
+           oninput="this.value=this.value.toUpperCase()">
+    <button class="big-btn" onclick="joinGame()">JOIN GAME</button>
+    <button id="lobby-create" onclick="createRoom()">CREATE ROOM</button>
+    <p id="lobby-hint">Enter <b>PLAYAI</b> to challenge the CPU &nbsp;·&nbsp; Create or enter a room code for 2-player</p>
+    <p id="lobby-msg"></p>
+</div>
+
+<!-- GAME CONTAINER -->
+<div id="game-container" class="hidden">
+    <h1>RANKS</h1>
+
+    <div id="hud">
+        <div class="hud-row header">
+            <span>PLAYER</span><span>SUPPLY</span><span>AXIS</span>
+        </div>
+        <div class="hud-row p1-c">
+            <span>P1 (White)</span>
+            <span id="p1-supply">24</span>
+            <span>N ↕ S</span>
+        </div>
+        <div class="hud-row p2-c">
+            <span>P2 (Black)</span>
+            <span id="p2-supply">24</span>
+            <span>W ↔ E</span>
+        </div>
+        <div id="player-identity">Detecting...</div>
+    </div>
+
+    <div id="top-bar">
+        <span id="status-msg">Waiting...</span>
+    </div>
+
+    <div id="canvas-wrapper">
+        <canvas id="gameCanvas" width="900" height="900"></canvas>
+        <div id="bubble-menu" class="hidden"></div>
+    </div>
+
+    <div id="combat-log" class="hidden">
+        <div class="log-title">Game Log</div>
+        <div id="log-lines"></div>
+    </div>
+
+    <div id="cheat-sheet">
+        <div class="cs-col">
+            <h4>Your Objective</h4>
+            <div class="cs-item"><span><b>P1 White</b></span><span>Connect Row 1 → Row 9</span></div>
+            <div class="cs-item"><span><b>P2 Black</b></span><span>Connect Col 1 → Col 9</span></div>
+        </div>
+        <div class="cs-col">
+            <h4>Placement Zones</h4>
+            <div class="cs-item"><span>Home edge</span><span>Row 1 (P1) / Col 1 (P2)</span></div>
+            <div class="cs-item"><span>Expand</span><span>Adjacent to own tile</span></div>
+            <div class="cs-item"><span>Stack</span><span>On own single tile (max 2)</span></div>
+        </div>
+        <div class="cs-col">
+            <h4>Reveal Rule</h4>
+            <div class="cs-item"><span>After connecting</span><span>Flip 1 face-down tile in cluster</span></div>
+        </div>
+        <div class="cs-col">
+            <h4>Combat (on contact)</h4>
+            <div class="cs-item"><span>Sum cluster values</span><span>Higher total wins</span></div>
+            <div class="cs-item"><span>Damage</span><span>Winner's total − Loser's total</span></div>
+            <div class="cs-item"><span>Remove tiles</span><span>Nearest to contact first</span></div>
+            <div class="cs-item"><span>Winner's reward</span><span>Peek at 1 enemy tile</span></div>
+        </div>
+        <div class="full-rules">
+            <a href="rules.html" target="_blank">READ FULL RULEBOOK →</a>
+        </div>
+    </div>
+</div>
+
+<!-- GAME OVER -->
+<div id="game-over" class="hidden">
+    <div id="go-backdrop"></div>
+    <div id="go-bubble">
+        <div id="go-title">GAME OVER</div>
+        <div id="go-reason"></div>
+        <div id="go-btn-row">
+            <button class="go-btn go-btn-primary"   onclick="location.reload()">MAIN MENU</button>
+            <button class="go-btn go-btn-secondary"  onclick="downloadLog()">DOWNLOAD LOG</button>
+        </div>
+    </div>
+</div>
+
+<!-- PIE DECISION (PvP only, shown to P2) -->
+<div id="pie-overlay" class="hidden">
+    <div id="pie-bubble">
+        <h3>The Pie Rule</h3>
+        <p>Your opponent placed the opening tile.<br>
+           You may <b>SWAP</b> sides (take their position and axis) or <b>CONTINUE</b> as Black (E–W).</p>
+        <div id="pie-btn-row">
+            <button class="pie-btn pie-swap"     onclick="sendPieDecision(true)">SWAP</button>
+            <button class="pie-btn pie-continue" onclick="sendPieDecision(false)">CONTINUE</button>
+        </div>
+    </div>
+</div>
+
+<!-- PEEK FLASH -->
+<div id="peek-flash" class="hidden"></div>
+
+<!-- WAITING -->
+<div id="waiting-msg" class="hidden">Waiting for opponent...</div>
+
+<script>
+// ── SOCKET ──────────────────────────────────────────────────────
+const socket = io();
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+
+// ── STATE ────────────────────────────────────────────────────────
+let state    = null;
+let myPlayer = 0;
+let roomId   = null;
+
+// ── BOARD GEOMETRY ───────────────────────────────────────────────
+const CANVAS_SIZE = 900;
+const MARGIN      = 58;   // space for labels
+const BOARD_PX    = CANVAS_SIZE - MARGIN * 2;
+const CELL        = BOARD_PX / 9;          // ~87px
+const TILE_SIZE   = CELL * 0.72;
+
+function cellX(c) { return MARGIN + c * CELL + CELL / 2; }
+function cellY(r) { return MARGIN + r * CELL + CELL / 2; }
+
+// ── SESSION ──────────────────────────────────────────────────────
+function saveSession()   { try { sessionStorage.setItem('ranks_room', roomId); sessionStorage.setItem('ranks_player', myPlayer); } catch(e){} }
+function clearSession()  { try { sessionStorage.removeItem('ranks_room'); sessionStorage.removeItem('ranks_player'); } catch(e){} }
+function getSavedSession() {
+    try {
+        const r = sessionStorage.getItem('ranks_room');
+        const p = parseInt(sessionStorage.getItem('ranks_player'));
+        if (r && p) return { roomId: r, player: p };
+    } catch(e) {}
+    return null;
+}
+
+socket.on('connect', () => {
+    const s = getSavedSession();
+    if (s) socket.emit('rejoinGame', s);
+});
+
+socket.on('rejoinFailed', (reason) => {
+    clearSession();
+    document.getElementById('game-container').classList.add('hidden');
+    document.getElementById('game-over').classList.add('hidden');
+    document.getElementById('lobby-screen').classList.remove('hidden');
+    document.getElementById('lobby-msg').innerText = 'Disconnected: ' + reason;
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && roomId && myPlayer) {
+        if (!socket.connected) return;
+        socket.emit('rejoinGame', { roomId, player: myPlayer });
+    }
+});
+
+// ── LOBBY ────────────────────────────────────────────────────────
+function joinGame() {
+    const input = document.getElementById('room-input').value.toUpperCase().trim();
+    if (!input) return;
+    roomId = input;
+    socket.emit('joinGame', roomId);
+    document.getElementById('lobby-msg').innerText = 'Connecting...';
+}
+
+function createRoom() {
+    const chars  = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const code   = Array.from({length:4}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+    document.getElementById('room-input').value = code;
+    document.getElementById('lobby-msg').innerText = `Room ${code} created. Share this code with your opponent, then JOIN.`;
+}
+
+// ── SOCKET EVENTS ────────────────────────────────────────────────
+socket.on('init', (data) => {
+    myPlayer = data.player;
+    if (data.roomId) roomId = data.roomId;
+    saveSession();
+    document.getElementById('lobby-screen').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    document.getElementById('waiting-msg').classList.add('hidden');
+    updateIdentity();
+    draw();
+});
+
+socket.on('waiting', () => {
+    document.getElementById('lobby-screen').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    document.getElementById('waiting-msg').classList.remove('hidden');
+    document.getElementById('status-msg').innerText = 'Waiting for opponent...';
+});
+
+socket.on('update', (newState) => {
+    state = newState;
+    document.getElementById('waiting-msg').classList.add('hidden');
+    hideBubble();
+    updateHUD();
+    updateStatusMsg();
+    updateLog();
+    draw();
+    handlePhaseUI();
+});
+
+socket.on('roomFull', () => {
+    document.getElementById('lobby-msg').innerText = 'Room is full.';
+});
+
+socket.on('peekResult', (data) => {
+    const loc = data.fromSupply ? `opponent's supply` : `(${data.r+1},${data.c+1})`;
+    showPeekFlash(`PEEK: ${loc} = [${data.value}]`);
+});
+
+// ── PHASE UI ────────────────────────────────────────────────────
+function handlePhaseUI() {
+    if (!state) return;
+    const phase = state.phase;
+
+    // PIE_DECISION: show overlay to P2
+    const pieOverlay = document.getElementById('pie-overlay');
+    if (phase === 'PIE_DECISION' && myPlayer === 2) {
+        pieOverlay.classList.remove('hidden');
+    } else {
+        pieOverlay.classList.add('hidden');
+    }
+
+    // GAME_OVER
+    if (phase === 'GAME_OVER') {
+        clearSession();
+        const w = state.winner;
+        const cond = state.winCondition;
+        let title, reason;
+        if (!w) {
+            title = 'DRAW'; reason = 'Equal tile values — no path completed.';
+        } else {
+            const isMe = w === myPlayer;
+            title  = isMe ? 'YOU WIN' : 'YOU LOSE';
+            const playerLabel = w === 1 ? 'White (P1)' : 'Black (P2)';
+            const condLabel   = cond === 'path' ? 'Path Connection' : cond === 'attrition' ? 'Tile Value' : cond;
+            reason = `${playerLabel} wins by ${condLabel}.`;
+        }
+        document.getElementById('go-title').innerText  = title;
+        document.getElementById('go-reason').innerText = reason;
+        document.getElementById('game-over').classList.remove('hidden');
+    }
+}
+
+function sendPieDecision(swap) {
+    socket.emit('action', { roomId, type: 'pieDecision', swap });
+    document.getElementById('pie-overlay').classList.add('hidden');
+}
+
+// ── STATUS MSG ───────────────────────────────────────────────────
+function updateStatusMsg() {
+    if (!state) return;
+    const el    = document.getElementById('status-msg');
+    const phase = state.phase;
+    const isMe  = state.currentPlayer === myPlayer;
+    const isRevealMe = state.revealPlayer === myPlayer;
+    const isReconMe  = state.reconWinner === myPlayer;
+
+    if (phase === 'PIE_PLACE') {
+        el.innerText = isMe ? 'PLACE OPENING TILE (ROW 1)' : 'OPPONENT PLACING...';
+    } else if (phase === 'PIE_DECISION') {
+        el.innerText = myPlayer === 2 ? 'SWAP OR CONTINUE?' : 'OPPONENT DECIDING...';
+    } else if (phase === 'MAIN') {
+        el.innerText = isMe ? 'YOUR TURN' : 'OPPONENT\'S TURN';
+    } else if (phase === 'REVEAL_RULE') {
+        el.innerText = isRevealMe ? 'FLIP A FACE-DOWN TILE' : 'OPPONENT REVEALING...';
+    } else if (phase === 'RECON') {
+        el.innerText = isReconMe ? 'PEEK AT AN ENEMY TILE' : 'OPPONENT PEEKING...';
+    } else if (phase === 'GAME_OVER') {
+        el.innerText = 'GAME OVER';
+    }
+}
+
+// ── HUD ──────────────────────────────────────────────────────────
+function updateHUD() {
+    if (!state) return;
+    document.getElementById('p1-supply').innerText = state.supplies[1];
+    document.getElementById('p2-supply').innerText = state.supplies[2];
+}
+
+function updateIdentity() {
+    const el = document.getElementById('player-identity');
+    if (myPlayer === 1) el.innerText = 'YOU ARE WHITE (P1) — N↕S';
+    else if (myPlayer === 2) el.innerText = 'YOU ARE BLACK (P2) — W↔E';
+}
+
+// ── LOG ──────────────────────────────────────────────────────────
+function updateLog() {
+    if (!state || !state.gameLog || !state.gameLog.length) return;
+    const logDiv = document.getElementById('combat-log');
+    const lines  = document.getElementById('log-lines');
+    logDiv.classList.remove('hidden');
+    lines.innerHTML = state.gameLog.map(l => `<div>${l}</div>`).join('');
+}
+
+// ── VALID MOVES (CLIENT-SIDE MIRROR OF SERVER LOGIC) ────────────
+function getValidPlacements(board, player) {
+    const valid = new Set();
+    const homeRow = player === 1 ? 0 : null;
+    const homeCol = player === 2 ? 0 : null;
+    if (homeRow !== null) {
+        for (let c = 0; c < 9; c++) if (board[homeRow][c].tiles.length === 0) valid.add(`${homeRow},${c}`);
+    }
+    if (homeCol !== null) {
+        for (let r = 0; r < 9; r++) if (board[r][homeCol].tiles.length === 0) valid.add(`${r},${homeCol}`);
+    }
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+            if (cellOwnerC(board[r][c]) === player) {
+                for (const [nr, nc] of neighborsC(r, c)) {
+                    if (board[nr][nc].tiles.length === 0) valid.add(`${nr},${nc}`);
+                }
+            }
+        }
+    }
+    return valid;
+}
+
+function getValidStacks(board, player) {
+    const valid = new Set();
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+            if (cellOwnerC(board[r][c]) === player && board[r][c].tiles.length === 1) valid.add(`${r},${c}`);
+        }
+    }
+    return valid;
+}
+
+function cellOwnerC(cell) {
+    return cell.tiles.length ? cell.tiles[cell.tiles.length-1].owner : null;
+}
+
+function neighborsC(r, c) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+            if ((dr||dc) && r+dr>=0 && r+dr<9 && c+dc>=0 && c+dc<9)
+                out.push([r+dr, c+dc]);
+    return out;
+}
+
+// ── DRAWING ──────────────────────────────────────────────────────
+function draw() {
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    if (!state) { drawEmptyBoard(); return; }
+
+    const board = state.board;
+    const phase = state.phase;
+    const isMyTurn = state.currentPlayer === myPlayer;
+
+    // Compute highlights
+    let validPlace = new Set(), validStack = new Set(),
+        revealHL = new Set(), reconHL = new Set();
+
+    if (phase === 'PIE_PLACE' && isMyTurn) {
+        for (let c = 0; c < 9; c++) if (board[0][c].tiles.length === 0) validPlace.add(`0,${c}`);
+    } else if (phase === 'MAIN' && isMyTurn && state.supplies[myPlayer] > 0) {
+        validPlace = getValidPlacements(board, myPlayer);
+        validStack = getValidStacks(board, myPlayer);
+    } else if (phase === 'REVEAL_RULE' && state.revealPlayer === myPlayer) {
+        for (const [cr, cc] of state.revealCluster) {
+            const top = board[cr][cc].tiles.slice(-1)[0];
+            if (top && !top.faceUp) revealHL.add(`${cr},${cc}`);
+        }
+    } else if (phase === 'RECON' && state.reconWinner === myPlayer) {
+        for (let r = 0; r < 9; r++)
+            for (let c = 0; c < 9; c++) {
+                const top = board[r][c].tiles.slice(-1)[0];
+                if (top && top.owner === state.reconEnemy && !top.faceUp) reconHL.add(`${r},${c}`);
+            }
+    }
+
+    drawGrid(validPlace, validStack, revealHL, reconHL);
+    drawLabels();
+
+    // Draw tiles
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+            drawCell(r, c, board[r][c], validPlace, validStack, revealHL, reconHL);
+        }
+    }
+
+    // Last move indicator
+    if (state.lastCombat) drawCombatIndicator();
+}
+
+function drawEmptyBoard() {
+    drawGrid(new Set(), new Set(), new Set(), new Set());
+    drawLabels();
+}
+
+function drawGrid(validPlace, validStack, revealHL, reconHL) {
+    // Background tints for edges
+    ctx.fillStyle = 'rgba(220,235,255,0.22)';
+    ctx.fillRect(MARGIN, MARGIN, CELL * 9, CELL);          // Row 0 (P1 home)
+    ctx.fillStyle = 'rgba(220,235,255,0.12)';
+    ctx.fillRect(MARGIN, MARGIN + CELL * 8, CELL * 9, CELL); // Row 8 (P1 target)
+    ctx.fillStyle = 'rgba(255,235,200,0.22)';
+    ctx.fillRect(MARGIN, MARGIN, CELL, CELL * 9);           // Col 0 (P2 home)
+    ctx.fillStyle = 'rgba(255,235,200,0.12)';
+    ctx.fillRect(MARGIN + CELL * 8, MARGIN, CELL, CELL * 9); // Col 8 (P2 target)
+
+    // Grid lines
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 9; i++) {
+        const x = MARGIN + i * CELL;
+        const y = MARGIN + i * CELL;
+        ctx.beginPath(); ctx.moveTo(x, MARGIN); ctx.lineTo(x, MARGIN + CELL * 9); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(MARGIN, y); ctx.lineTo(MARGIN + CELL * 9, y); ctx.stroke();
+    }
+
+    // Cell highlights
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+            const k = `${r},${c}`;
+            let fill = null;
+            if      (reconHL.has(k))    fill = 'rgba(180,60,200,0.18)';
+            else if (revealHL.has(k))   fill = 'rgba(212,175,55,0.25)';
+            else if (validStack.has(k)) fill = 'rgba(60,120,220,0.13)';
+            else if (validPlace.has(k)) fill = 'rgba(80,180,80,0.13)';
+            if (fill) {
+                ctx.fillStyle = fill;
+                ctx.fillRect(MARGIN + c * CELL + 1, MARGIN + r * CELL + 1, CELL - 2, CELL - 2);
+            }
+        }
+    }
+}
+
+function drawLabels() {
+    ctx.fillStyle = '#aaa';
+    ctx.font = `bold ${Math.round(CELL * 0.24)}px Helvetica Neue, Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < 9; i++) {
+        // Col labels (top)
+        ctx.fillText(String(i + 1), MARGIN + i * CELL + CELL / 2, MARGIN / 2);
+        // Row labels (left)
+        ctx.fillText(String(i + 1), MARGIN / 2, MARGIN + i * CELL + CELL / 2);
+    }
+    // Edge labels
+    ctx.font = `bold ${Math.round(CELL * 0.2)}px Helvetica Neue, Arial, sans-serif`;
+    ctx.fillStyle = '#6699cc';
+    ctx.fillText('↓ P1', MARGIN / 2, MARGIN - 14);
+    ctx.fillStyle = '#cc9944';
+    ctx.fillText('→ P2', MARGIN - 16, MARGIN / 2);
+}
+
+function drawCell(r, c, cell, validPlace, validStack, revealHL, reconHL) {
+    const k    = `${r},${c}`;
+    const cx   = cellX(c);
+    const cy   = cellY(r);
+    const ts   = TILE_SIZE;
+    const ts2  = ts * 0.88; // inner tile for stack
+
+    if (cell.tiles.length === 0) {
+        // Empty dot
+        let dotColor = '#ccc';
+        if      (reconHL.has(k))    dotColor = 'rgba(180,60,200,0.5)';
+        else if (revealHL.has(k))   dotColor = 'rgba(212,175,55,0.6)';
+        else if (validStack.has(k)) dotColor = 'rgba(60,120,220,0.5)';
+        else if (validPlace.has(k)) dotColor = 'rgba(80,180,80,0.6)';
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+
+    const isStack = cell.tiles.length === 2;
+
+    // Draw stack shadow offset
+    if (isStack) {
+        ctx.save();
+        drawTileShape(cx + 4, cy + 4, ts2, cell.tiles[0], null, 0.4);
+        ctx.restore();
+    }
+
+    const topTile = cell.tiles[cell.tiles.length - 1];
+    const isOwn   = topTile.owner === myPlayer;
+    const borderKey = reconHL.has(k) ? 'recon' : revealHL.has(k) ? 'reveal' : validStack.has(k) ? 'stack' : null;
+
+    drawTileShape(cx, cy, ts, topTile, borderKey, 1.0);
+
+    // Value rendering
+    const showValue = topTile.faceUp || isOwn;
+    if (showValue) {
+        const value = isStack
+            ? cell.tiles.reduce((s, t) => s + (t.value || 0), 0)
+            : topTile.value;
+
+        ctx.font = `900 ${Math.round(ts * 0.46)}px Helvetica Neue, Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        if (topTile.faceUp) {
+            ctx.fillStyle = topTile.owner === 1 ? '#1a1a1a' : '#ffffff';
+        } else {
+            // Private view (own face-down): dimmer
+            ctx.fillStyle = topTile.owner === 1 ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+            ctx.font = `700 ${Math.round(ts * 0.38)}px Helvetica Neue, Arial, sans-serif`;
+        }
+        ctx.fillText(String(value), cx, cy);
+    }
+
+    // Stack indicator badge
+    if (isStack) {
+        ctx.fillStyle = '#d4af37';
+        ctx.font = `900 ${Math.round(ts * 0.22)}px Helvetica Neue, Arial, sans-serif`;
+        ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+        ctx.fillText('×2', cx + ts / 2 - 4, cy - ts / 2 + 3);
+    }
+
+    // Face-up glow ring
+    if (topTile.faceUp) {
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 2.5;
+        const half = ts / 2;
+        roundRect(ctx, cx - half, cy - half, ts, ts, 5);
+        ctx.stroke();
+    }
+
+    // Highlight borders
+    if (borderKey) {
+        let bc = borderKey === 'recon' ? '#c040e0' : borderKey === 'reveal' ? '#d4af37' : '#3c78dc';
+        ctx.strokeStyle = bc;
+        ctx.lineWidth = 3.5;
+        const half = ts / 2;
+        roundRect(ctx, cx - half - 3, cy - half - 3, ts + 6, ts + 6, 7);
+        ctx.stroke();
+    }
+}
+
+function drawTileShape(cx, cy, size, tile, borderKey, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const half = size / 2;
+    const fill = tile.owner === 1 ? '#f8f8f8' : '#1a1a1a';
+    ctx.fillStyle = fill;
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur  = 6;
+    roundRect(ctx, cx - half, cy - half, size, size, 6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Border
+    const bc = tile.owner === 1 ? '#1a1a1a' : '#333';
+    ctx.strokeStyle = bc;
+    ctx.lineWidth   = tile.owner === 1 ? 2 : 0;
+    if (tile.owner === 1) { roundRect(ctx, cx - half, cy - half, size, size, 6); ctx.stroke(); }
+    ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+function drawCombatIndicator() {
+    const lc = state.lastCombat;
+    if (!lc) return;
+    // Pulse destroyed tile positions
+    for (const d of lc.destroyed) {
+        const cx = cellX(d.c);
+        const cy = cellY(d.r);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(217,83,79,0.7)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        const half = TILE_SIZE / 2 + 6;
+        roundRect(ctx, cx - half, cy - half, TILE_SIZE + 12, TILE_SIZE + 12, 9);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// ── INTERACTION ──────────────────────────────────────────────────
+canvas.addEventListener('click', (e) => {
+    if (!state) return;
+    const rect   = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top)  * scaleY;
+
+    const c = Math.floor((x - MARGIN) / CELL);
+    const r = Math.floor((y - MARGIN) / CELL);
+
+    if (r < 0 || r >= 9 || c < 0 || c >= 9) { hideBubble(); return; }
+
+    // Check if clicking same cell twice → close bubble
+    if (document.getElementById('bubble-menu').dataset.cell === `${r},${c}`) {
+        hideBubble(); return;
+    }
+
+    handleCellClick(r, c, e.clientX, e.clientY);
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (!state) return;
+    const touch = e.changedTouches[0];
+    const rect  = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top)  * scaleY;
+    const c = Math.floor((x - MARGIN) / CELL);
+    const r = Math.floor((y - MARGIN) / CELL);
+    if (r < 0 || r >= 9 || c < 0 || c >= 9) { hideBubble(); return; }
+    handleCellClick(r, c, touch.clientX, touch.clientY);
+}, { passive: false });
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#canvas-wrapper')) hideBubble();
+});
+
+function handleCellClick(r, c, clientX, clientY) {
+    if (!state || state.phase === 'GAME_OVER') return;
+    const phase = state.phase;
+    const k     = `${r},${c}`;
+    const board = state.board;
+    const cell  = board[r][c];
+    const top   = cell.tiles.slice(-1)[0] || null;
+
+    const menu  = document.getElementById('bubble-menu');
+    const actions = [];
+
+    if (phase === 'PIE_PLACE' && state.currentPlayer === myPlayer) {
+        if (r === 0 && cell.tiles.length === 0)
+            actions.push({ label: 'PLACE', cls: 'b-place', fn: () => emit('place', r, c) });
+
+    } else if (phase === 'MAIN' && state.currentPlayer === myPlayer) {
+        const vp = getValidPlacements(board, myPlayer);
+        const vs = getValidStacks(board, myPlayer);
+        if (vp.has(k)) actions.push({ label: 'PLACE', cls: 'b-place', fn: () => emit('place', r, c) });
+        if (vs.has(k)) actions.push({ label: 'STACK', cls: 'b-stack', fn: () => emit('stack', r, c) });
+
+    } else if (phase === 'REVEAL_RULE' && state.revealPlayer === myPlayer) {
+        if (top && !top.faceUp && top.owner === myPlayer) {
+            const inCluster = state.revealCluster.some(([cr, cc]) => cr === r && cc === c);
+            if (inCluster) actions.push({ label: 'REVEAL', cls: 'b-reveal', fn: () => emit('reveal', r, c) });
+        }
+
+    } else if (phase === 'RECON' && state.reconWinner === myPlayer) {
+        if (top && !top.faceUp && top.owner === state.reconEnemy)
+            actions.push({ label: 'PEEK', cls: 'b-peek', fn: () => emit('recon', r, c) });
+    }
+
+    if (actions.length === 0) { hideBubble(); return; }
+
+    // If only one action, execute immediately without bubble
+    if (actions.length === 1) { actions[0].fn(); return; }
+
+    // Show bubble
+    menu.innerHTML = '';
+    menu.dataset.cell = k;
+    actions.forEach(a => {
+        const btn = document.createElement('button');
+        btn.className = `bubble-btn ${a.cls}`;
+        btn.innerText = a.label;
+        btn.onclick = (ev) => { ev.stopPropagation(); a.fn(); hideBubble(); };
+        menu.appendChild(btn);
+    });
+
+    // Position bubble above cell
+    const wrapper    = document.getElementById('canvas-wrapper');
+    const wRect      = wrapper.getBoundingClientRect();
+    const scale      = wRect.width / CANVAS_SIZE;
+    const cssCx      = (cellX(c)) * scale;
+    const cssCy      = (cellY(r)) * scale;
+    const menuW      = actions.length * 110;
+    let leftPos      = cssCx - menuW / 2;
+    leftPos          = Math.max(4, Math.min(leftPos, wRect.width - menuW - 4));
+    const shiftPct   = ((cssCx - leftPos) / menuW * 100).toFixed(0);
+
+    menu.style.left = `${leftPos}px`;
+    menu.style.top  = `${cssCy - 6}px`;
+    menu.style.transform = 'translateY(-100%)';
+    menu.style.setProperty('--arrow-pos', `${shiftPct}%`);
+    menu.classList.remove('hidden');
+}
+
+function emit(type, r, c) {
+    socket.emit('action', { roomId, type, r, c });
+}
+
+function hideBubble() {
+    const m = document.getElementById('bubble-menu');
+    m.classList.add('hidden');
+    m.dataset.cell = '';
+}
+
+// ── PEEK FLASH ───────────────────────────────────────────────────
+function showPeekFlash(msg) {
+    const el = document.getElementById('peek-flash');
+    el.innerText = msg;
+    el.classList.remove('hidden');
+    el.style.opacity = '1';
+    setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.classList.add('hidden'), 420);
+    }, 3200);
+}
+
+// ── DOWNLOAD LOG ─────────────────────────────────────────────────
+function downloadLog() {
+    if (!state || !state.gameLog) return;
+    const text = `RANKS GAME LOG\nRoom: ${roomId}\n\n` + state.gameLog.reverse().join('\n');
+    const blob  = new Blob([text], { type: 'text/plain' });
+    const a     = document.createElement('a');
+    a.href      = URL.createObjectURL(blob);
+    a.download  = `ranks_log_${roomId}.txt`;
+    a.click();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+draw();
+</script>
+</body>
+</html>

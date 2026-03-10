@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RANKS — Official Rules</title>
+    <style>
+        :root {
+            --gold:       #d4af37;
+            --black:      #111;
+            --white:      #f4f4f4;
+            --grey:       #333;
+            --light-grey: #e0e0e0;
+            --red:        #d9534f;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background-color: var(--white);
+            color: var(--black);
+            line-height: 1.65;
+            margin: 0; padding: 0;
+        }
+
+        header {
+            background-color: var(--black);
+            color: var(--gold);
+            text-align: center;
+            padding: 44px 20px;
+            border-bottom: 4px solid var(--gold);
+        }
+
+        h1 {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 900;
+            letter-spacing: 10px;
+            text-transform: uppercase;
+            margin: 0;
+            color: var(--white);
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            font-weight: 300;
+            color: #aaa;
+            margin-top: 10px;
+            letter-spacing: 2px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 44px 22px;
+        }
+
+        section {
+            margin-bottom: 54px;
+            border-left: 3px solid var(--gold);
+            padding-left: 26px;
+        }
+
+        h2 {
+            font-size: 1.85rem;
+            margin-top: 0;
+            border-bottom: 1px solid var(--black);
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            color: var(--grey);
+            margin-top: 32px;
+            margin-bottom: 10px;
+        }
+
+        h4 {
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            color: var(--black);
+        }
+
+        p, li { font-size: 1.05rem; margin-bottom: 14px; }
+        ul, ol { padding-left: 22px; }
+        strong { font-weight: 700; }
+
+        .note {
+            background-color: #f9f9f9;
+            border-left: 4px solid var(--grey);
+            padding: 14px 18px;
+            font-style: italic;
+            margin: 20px 0;
+            font-size: 0.98rem;
+        }
+
+        .important {
+            background-color: #fff8e6;
+            border-left: 4px solid var(--gold);
+            padding: 14px 18px;
+            margin: 20px 0;
+            font-size: 0.98rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 22px 0;
+            font-size: 0.98rem;
+            background-color: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.09);
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 11px 14px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background-color: var(--black);
+            color: var(--white);
+            text-transform: uppercase;
+            font-size: 0.88rem;
+            letter-spacing: 1px;
+        }
+
+        tr:nth-child(even) { background-color: #f5f5f5; }
+
+        .hl-gold { color: #b8962e; font-weight: bold; }
+        .hl-red  { color: var(--red); font-weight: bold; }
+        .hl-blue { color: #336699; font-weight: bold; }
+
+        footer {
+            background-color: var(--black);
+            color: #777;
+            text-align: center;
+            padding: 22px;
+            margin-top: 50px;
+            font-size: 0.9rem;
+        }
+
+        a { color: var(--gold); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 32px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.9rem;
+            color: #555;
+        }
+        .back-link:hover { color: var(--black); }
+
+        @media (max-width: 600px) {
+            section { padding-left: 14px; border-left-width: 3px; }
+            th, td  { font-size: 0.82rem; padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>RANKS</h1>
+    <div class="subtitle">A Game of Hidden Strength and Asymmetric Connection</div>
+</header>
+
+<div class="container">
+
+    <a class="back-link" href="index.html">← Back to Game</a>
+
+    <!-- ─── 1. OBJECTIVE ─────────────────────────────────────── -->
+    <section>
+        <h2>1. Objective</h2>
+        <p>Two players race to forge an unbroken chain of tiles across opposing edges of a 9×9 grid — but the values of those tiles are hidden, and combat can shatter entire groups in one blow.</p>
+        <ul>
+            <li><strong>Player 1 (White):</strong> Connect Row 1 to Row 9 (North–South).</li>
+            <li><strong>Player 2 (Black):</strong> Connect Column 1 to Column 9 (East–West).</li>
+        </ul>
+        <p>The axes are orthogonal. Only one player can win by path. If both supplies are exhausted before a path is completed, the player with the higher total tile value on the board wins by attrition.</p>
+    </section>
+
+    <!-- ─── 2. COMPONENTS ────────────────────────────────────── -->
+    <section>
+        <h2>2. Components</h2>
+        <ul>
+            <li><strong>1 Board:</strong> A 9×9 grid. Rows are numbered 1–9 top to bottom; columns 1–9 left to right.</li>
+            <li><strong>48 Tiles per player (24 each):</strong> Four copies of values 1, 2, 3, 4, 5, and 6. Each tile has a face-down (hidden) and face-up (revealed) state.</li>
+        </ul>
+        <div class="note">
+            Tiles are drawn from a shuffled supply — neither player knows the order of their own draw pile, let alone their opponent's.
+        </div>
+    </section>
+
+    <!-- ─── 3. SETUP & PIE RULE ──────────────────────────────── -->
+    <section>
+        <h2>3. Setup &amp; The Pie Rule</h2>
+        <ol>
+            <li>Each player receives a shuffled face-down supply of 24 tiles.</li>
+            <li><strong>Player 1 (White)</strong> places the first tile, face-down, anywhere on <strong>Row 1</strong>.</li>
+            <li><strong>Player 2 (Black)</strong> then invokes the <strong>Pie Rule</strong>:
+                <ul>
+                    <li><strong>SWAP</strong> — takes the White side (N–S axis) and plays the tile just placed. Player 1 becomes Black (E–W).</li>
+                    <li><strong>CONTINUE</strong> — remains Black (E–W) and takes the first turn normally.</li>
+                </ul>
+            </li>
+        </ol>
+        <div class="important">
+            <strong>Why the Pie Rule?</strong> Player 1 has a first-mover advantage. By letting Player 2 swap sides, the opening tile cannot be placed in an obviously dominant position — Player 1 would just inherit it themselves.
+        </div>
+    </section>
+
+    <!-- ─── 4. TURN STRUCTURE ────────────────────────────────── -->
+    <section>
+        <h2>4. Turn Structure</h2>
+        <p>Players alternate turns. Each turn has up to three sequential phases:</p>
+
+        <h3>Phase 1 — Placement</h3>
+        <p>Draw one tile from the top of your supply and place it face-down on a <strong>valid cell</strong>.</p>
+
+        <h4>Valid Placement Cells</h4>
+        <table>
+            <thead><tr><th>Type</th><th>Where</th><th>Condition</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><strong>Home Edge</strong></td>
+                    <td>P1: any empty cell in Row 1.<br>P2: any empty cell in Column 1.</td>
+                    <td>Cell must be empty.</td>
+                </tr>
+                <tr>
+                    <td><strong>Expansion</strong></td>
+                    <td>Any empty cell orthogonally or diagonally adjacent to one of your own tiles.</td>
+                    <td>Cell must be empty. Adjacency is 8-directional (includes diagonals).</td>
+                </tr>
+                <tr>
+                    <td><strong>Stack</strong></td>
+                    <td>On top of one of your own tiles that currently has height 1.</td>
+                    <td>Max stack height is 2. You cannot stack on a tile already stacked.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            A stack is treated as a single path node — it counts once for connectivity. The top tile is destroyed first in combat. When face-up, a stack displays the <strong>combined</strong> value of both tiles.
+        </div>
+
+        <h3>Phase 2 — Reveal Rule (Conditional)</h3>
+        <p>If the tile you just placed is <strong>adjacent (8-directional) to another of your own tiles</strong>, your cluster has grown. Immediately flip <strong>one face-down tile</strong> of your choice anywhere within your newly-expanded cluster face-up. This flip happens <strong>before</strong> combat is resolved.</p>
+
+        <h4>Why does this matter?</h4>
+        <p>You choose which tile to reveal. Revealing a low-value tile tempts your opponent into risky engagements. Revealing a high-value tile projects strength but surrenders information. The choice is always meaningful.</p>
+
+        <h3>Phase 3 — Combat (Conditional)</h3>
+        <p>If the tile you just placed is <strong>adjacent to one or more enemy tiles</strong>, <strong>cluster combat</strong> is triggered. Combat resolves as follows:</p>
+
+        <ol>
+            <li><strong>Identify clusters.</strong> Your entire contiguous group of tiles (the attacking cluster) fights the union of all enemy contiguous groups adjacent to your new tile (the defending cluster). If your tile is wedged between two separate enemy clusters, both are merged for the purpose of this combat.</li>
+            <li><strong>Full reveal.</strong> All tiles in both clusters are flipped face-up before damage is calculated.</li>
+            <li><strong>Sum power.</strong> Each cluster's power = sum of all tile values in the cluster. A stacked cell contributes both tile values.</li>
+            <li><strong>Resolve damage.</strong> The losing cluster takes damage equal to <em>(winner's power − loser's power)</em>. Tiles are removed from the loser starting with those <strong>nearest to the triggering tile</strong> (measured by Manhattan distance: |Δrow| + |Δcol|). When tiles must be removed, the top tile of a stack is destroyed first; the bottom tile only if more damage remains.</li>
+            <li><strong>Tie.</strong> If powers are equal, no tiles are destroyed. All tiles in both clusters remain face-up.</li>
+        </ol>
+
+        <div class="important">
+            <strong>Combat is the central tension of RANKS.</strong> A well-timed engagement can eliminate an opponent's entire network. But you reveal your own values in the process — every attack is also intelligence.
+        </div>
+
+        <h3>Reconnaissance (After Combat Victory)</h3>
+        <p>If your cluster <strong>won</strong> the combat (i.e., was not a tie), you earn a reconnaissance action: choose one face-down enemy tile anywhere on the board and secretly look at its value. The tile is returned to its exact position, still face-down. If no face-down enemy tiles remain on the board, peek at the top tile of the enemy's supply instead.</p>
+
+        <h3>Passing</h3>
+        <p>If you have no valid placement (no empty cells on your home edge and no adjacency to your own tiles), you must pass. If <strong>both players pass consecutively</strong>, the game ends immediately and the attrition tiebreaker is applied.</p>
+    </section>
+
+    <!-- ─── 5. VICTORY ───────────────────────────────────────── -->
+    <section>
+        <h2>5. Victory Conditions</h2>
+
+        <h3>Path Victory (Primary)</h3>
+        <p>After your placement and combat resolve, check whether you have formed an unbroken chain of your own tiles connecting both of your target edges:</p>
+        <ul>
+            <li><strong>White (P1):</strong> Any tile in Row 1 connected to any tile in Row 9 through a chain of orthogonally or diagonally adjacent White tiles.</li>
+            <li><strong>Black (P2):</strong> Any tile in Column 1 connected to any tile in Column 9 through a chain of adjacent Black tiles.</li>
+        </ul>
+        <p>Victory is checked after each placement. If both players complete a path simultaneously (possible if combat opens a gap in the opponent's chain that simultaneously closes yours), <strong>the active player wins</strong>.</p>
+
+        <h3>Attrition Victory (Secondary)</h3>
+        <p>If both supplies are exhausted and neither player has achieved a path, the player with the <strong>higher total tile value on the board</strong> wins. Only tiles currently on the board count; destroyed tiles are gone.</p>
+
+        <h3>Tiebreaker</h3>
+        <p>If tile values on the board are exactly equal: <strong>Draw</strong>.</p>
+    </section>
+
+    <!-- ─── 6. COMBAT REFERENCE ──────────────────────────────── -->
+    <section>
+        <h2>6. Combat Reference</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Situation</th>
+                    <th>Power Comparison</th>
+                    <th>Outcome</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>You place adjacent to an enemy tile</td>
+                    <td>Your cluster &gt; enemy cluster</td>
+                    <td class="hl-blue">You win. Enemy loses tiles nearest to trigger first. You earn recon.</td>
+                </tr>
+                <tr>
+                    <td>You place adjacent to an enemy tile</td>
+                    <td>Your cluster &lt; enemy cluster</td>
+                    <td class="hl-red">You lose. Your cluster loses tiles nearest to trigger first. Enemy earns recon.</td>
+                </tr>
+                <tr>
+                    <td>You place adjacent to an enemy tile</td>
+                    <td>Your cluster = enemy cluster</td>
+                    <td class="hl-gold">Tie. No tiles destroyed. All tiles in both clusters remain face-up. No recon.</td>
+                </tr>
+                <tr>
+                    <td>You place adjacent to two separate enemy clusters</td>
+                    <td>Any</td>
+                    <td>Both enemy clusters are merged into one defending cluster for power calculation.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Damage Removal Order</h4>
+        <p>Tiles are removed from the losing cluster in order of <strong>ascending Manhattan distance</strong> from the triggering tile. If multiple tiles are equidistant, the losing player chooses the order among them. Destruction continues until the total value destroyed is &ge; the damage amount.</p>
+        <div class="note">
+            Partial destruction of a tile is not permitted. If a tile of value 3 is the next to be removed and only 1 damage remains, the tile is still destroyed entirely. Overkill does not carry over.
+        </div>
+    </section>
+
+    <!-- ─── 7. STACKING RULES ────────────────────────────────── -->
+    <section>
+        <h2>7. Stacking Rules</h2>
+        <ul>
+            <li>You may place a tile on top of one of your own tiles that has exactly one tile (height 1). The result is a height-2 stack.</li>
+            <li>A stack counts as <strong>one node</strong> for path connectivity.</li>
+            <li>The <strong>top tile is destroyed first</strong> when damage is applied to a stack. The bottom tile is only destroyed if damage exceeds the top tile's value.</li>
+            <li>A stack's face-up value displayed in the UI is the <strong>sum</strong> of both tiles' values — only relevant when both are face-up.</li>
+            <li>If only the bottom tile of a stack is face-down, the shown value is the top tile's value only.</li>
+        </ul>
+    </section>
+
+    <!-- ─── 8. INFORMATION RULES ────────────────────────────── -->
+    <section>
+        <h2>8. Information Rules</h2>
+
+        <table>
+            <thead><tr><th>Tile State</th><th>Visible To</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td>Your own face-down tile</td>
+                    <td>You only</td>
+                    <td>You know its value. Shown dimly in the UI.</td>
+                </tr>
+                <tr>
+                    <td>Your own face-up tile</td>
+                    <td>Both players</td>
+                    <td>Revealed permanently.</td>
+                </tr>
+                <tr>
+                    <td>Enemy face-down tile</td>
+                    <td>Neither player*</td>
+                    <td>*Except via Reconnaissance or if previously peeked.</td>
+                </tr>
+                <tr>
+                    <td>Enemy face-up tile</td>
+                    <td>Both players</td>
+                    <td>Revealed permanently once flipped.</td>
+                </tr>
+                <tr>
+                    <td>Enemy supply (top tile)</td>
+                    <td>Neither*</td>
+                    <td>*Can be peeked via Recon if no face-down tiles are on the board.</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>Once a tile is flipped face-up (by the Reveal Rule, by combat, or by a tie), it <strong>remains face-up for the rest of the game</strong>.</p>
+    </section>
+
+    <!-- ─── 9. CLARIFICATIONS & FAQ ─────────────────────────── -->
+    <section>
+        <h2>9. Clarifications &amp; FAQ</h2>
+
+        <h3>Placement</h3>
+
+        <p><strong>Q: Can I place on Row 1 if I already have tiles on the board that are adjacent to other cells?</strong><br>
+        A: Yes. Your home edge (Row 1 for White, Col 1 for Black) always remains a valid placement zone as long as the cell is empty. You are not restricted to expanding from existing tiles — you may seed multiple disjoint groups.</p>
+
+        <p><strong>Q: Can I place on a cell that is adjacent to both my own tiles and enemy tiles?</strong><br>
+        A: Yes. Placing there will trigger the Reveal Rule (if adjacent to your own tiles) and then combat (because enemy tiles are adjacent). The reveal happens first, then combat resolves.</p>
+
+        <p><strong>Q: Is (1,1) — Row 1, Column 1 — valid for both players?</strong><br>
+        A: Yes. It sits on both home edges and is a legal placement for either player.</p>
+
+        <h3>Stacking</h3>
+
+        <p><strong>Q: Can I stack on a tile that just triggered combat this turn?</strong><br>
+        A: Yes, provided it survived combat and is still at height 1 at the start of your turn. Stacking is just another form of placement.</p>
+
+        <p><strong>Q: Does stacking trigger the Reveal Rule?</strong><br>
+        A: No. Stacking places a tile on top of an existing tile; it does not add a new node to the cluster. The Reveal Rule triggers only when a new node is placed adjacent to existing own tiles, increasing cluster size.</p>
+
+        <p><strong>Q: Does stacking trigger combat?</strong><br>
+        A: Yes, if the stacked cell is adjacent to enemy tiles. The expanded cluster (with the new tile on top of the stack) fights the enemy cluster as normal.</p>
+
+        <h3>Combat</h3>
+
+        <p><strong>Q: My cluster has 6 tiles and the enemy has 1 tile next to me. The damage wipes out the enemy tile. Do all 6 of my tiles get revealed?</strong><br>
+        A: Yes. All tiles in both clusters are revealed fully before damage is calculated. Full-reveal is a consequence of engaging in combat, regardless of outcome.</p>
+
+        <p><strong>Q: Can combat destroy the tile I just placed?</strong><br>
+        A: Yes. If your tile is closest to the triggering point and your cluster loses, your new tile may be the first destroyed.</p>
+
+        <p><strong>Q: After combat, can I still win by path?</strong><br>
+        A: Yes. Victory is checked after all of Phase 3 (combat) completes. If surviving tiles form a complete path, the active player wins.</p>
+
+        <h3>Reconnaissance</h3>
+
+        <p><strong>Q: I won a combat but all enemy tiles are face-up. What happens?</strong><br>
+        A: If there are no face-down tiles on the board at all, peek at the top tile of the enemy's supply. If the supply is also empty, no recon occurs.</p>
+
+        <p><strong>Q: Can I use reconnaissance to peek at a face-down tile in my own cluster?</strong><br>
+        A: No. Recon only targets face-down enemy tiles.</p>
+
+        <h3>End Game</h3>
+
+        <p><strong>Q: My supply just ran out and I have no tiles on the board to use. Do I lose?</strong><br>
+        A: Not automatically. Pass your turn. If your opponent also has an empty supply, proceed to the attrition tiebreaker. If they still have tiles, they continue placing while you pass each turn.</p>
+
+        <p><strong>Q: The attrition tiebreaker says "total tile value on board." Do stacked tiles count as both tiles?</strong><br>
+        A: Yes. Both tiles in a stack are on the board. A stack with values 4 and 3 contributes 7 to your total.</p>
+    </section>
+
+    <!-- ─── 10. STRATEGY NOTES ───────────────────────────────── -->
+    <section>
+        <h2>10. Strategy Notes</h2>
+
+        <h3>The Hidden Information Game</h3>
+        <p>RANKS is fundamentally an information game. Every reveal decision (Reveal Rule), every combat (forces full reveal), and every recon creates and destroys asymmetry. A player who knows the enemy cluster's value before engaging can calculate exact damage. A player going in blind is gambling.</p>
+
+        <h3>Cluster Mass vs. Path Progress</h3>
+        <p>Large clusters are powerful in combat but costly to build and devastating to lose. Thin path chains are fast but fragile. The tension between width (cluster mass) and depth (path progress) is the core strategic axis of the game.</p>
+
+        <h3>The Stacking Trade-off</h3>
+        <p>Stacking doubles the value of a node without adding a new tile to your path. It is a defensive investment: harder to destroy, but it consumes a turn that could extend your chain. Stacking near your home edge fortifies your rear; stacking near the contact zone amplifies your combat threat.</p>
+
+        <h3>Reading the Reveal Rule</h3>
+        <p>The Reveal Rule fires on almost every non-home-edge expansion move. That means your opponent is always accumulating information about your cluster. Consider: if you always reveal your lowest-value tile, you project weakness and may invite attacks you can actually win. If you reveal a high tile, you project strength but trade a strategic secret.</p>
+    </section>
+
+</div>
+
+<footer>
+    &copy; 2025 RANKS. All Rights Reserved.
+</footer>
+
+</body>
+</html>
