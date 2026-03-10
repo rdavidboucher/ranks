@@ -115,20 +115,43 @@ function getCluster(board, r, c, owner) {
     return [...visited].map(k => k.split(',').map(Number));
 }
 
-function hasPath(board, player) {
+// 4-directional neighbors only — used for path victory checks.
+// This guarantees that any PA path (N-S) and any PB path (E-W) must share at least
+// one cell, making a "safe corridor" mathematically impossible.
+function orthNeighbors(r, c) {
+    const out = [];
+    if (r > 0)              out.push([r - 1, c]);
+    if (r < BOARD_SIZE - 1) out.push([r + 1, c]);
+    if (c > 0)              out.push([r, c - 1]);
+    if (c < BOARD_SIZE - 1) out.push([r, c + 1]);
+    return out;
+}
+
+// Shallow board copy with one tile placed — used for win/block simulation.
+function quickSim(board, r, c, player) {
+    const sim = board.map(row => row.map(cell => ({ tiles: cell.tiles.map(t => ({ ...t })) })));
+    sim[r][c].tiles.push({ owner: player, value: 3, faceUp: false });
+    return sim;
+}
+
+// hasPath uses 4-directional adjacency only.
+// p2HomeCol (0 or 8): the column PB seeds from and the opposite is the target.
+function hasPath(board, player, p2HomeCol) {
+    const hc  = (player === PB) ? (p2HomeCol ?? 0) : null;
+    const tgt = (player === PB) ? (hc === 0 ? BOARD_SIZE - 1 : 0) : null;
     const starts = [];
     if (player === PA) {
         for (let c = 0; c < BOARD_SIZE; c++) if (cellOwner(board[0][c]) === player) starts.push([0, c]);
     } else {
-        for (let r = 0; r < BOARD_SIZE; r++) if (cellOwner(board[r][0]) === player) starts.push([r, 0]);
+        for (let r = 0; r < BOARD_SIZE; r++) if (cellOwner(board[r][hc]) === player) starts.push([r, hc]);
     }
     const visited = new Set();
     const queue = [];
     for (const s of starts) { const k = `${s[0]},${s[1]}`; if (!visited.has(k)) { visited.add(k); queue.push(s); } }
     while (queue.length) {
         const [r, c] = queue.shift();
-        if ((player === PA && r === BOARD_SIZE - 1) || (player === PB && c === BOARD_SIZE - 1)) return true;
-        for (const [nr, nc] of neighbors(r, c)) {
+        if ((player === PA && r === BOARD_SIZE - 1) || (player === PB && c === tgt)) return true;
+        for (const [nr, nc] of orthNeighbors(r, c)) {
             const k = `${nr},${nc}`;
             if (!visited.has(k) && cellOwner(board[nr][nc]) === player) { visited.add(k); queue.push([nr, nc]); }
         }
@@ -136,16 +159,44 @@ function hasPath(board, player) {
     return false;
 }
 
+// Furthest orthogonal frontier reachable from home edge via own tiles.
+// Returns row index (PA) or column index (PB, direction-aware).
+function pathFrontier(board, player, p2HomeCol) {
+    const towardTarget = player === PA || (player === PB && (p2HomeCol ?? 0) === 0);
+    const hc = (player === PB) ? (p2HomeCol ?? 0) : null;
+    const starts = [];
+    if (player === PA) {
+        for (let c = 0; c < BOARD_SIZE; c++) if (cellOwner(board[0][c]) === player) starts.push([0, c]);
+    } else {
+        for (let r = 0; r < BOARD_SIZE; r++) if (cellOwner(board[r][hc]) === player) starts.push([r, hc]);
+    }
+    if (!starts.length) return towardTarget ? -1 : BOARD_SIZE;
+    const visited = new Set();
+    const queue = [...starts];
+    for (const s of starts) visited.add(`${s[0]},${s[1]}`);
+    let best = towardTarget ? -1 : BOARD_SIZE;
+    while (queue.length) {
+        const [r, c] = queue.shift();
+        const pos = player === PA ? r : c;
+        best = towardTarget ? Math.max(best, pos) : Math.min(best, pos);
+        for (const [nr, nc] of orthNeighbors(r, c)) {
+            const k = `${nr},${nc}`;
+            if (!visited.has(k) && cellOwner(board[nr][nc]) === player) { visited.add(k); queue.push([nr, nc]); }
+        }
+    }
+    return best;
+}
+
 // Home edge seeding is restricted to the central 5 cells (indices 2-6) to prevent
 // uncontested edge-corridor wins. Expansion from existing tiles is unrestricted.
 const HOME_MIN = 2;  // inclusive, 0-indexed
 const HOME_MAX = 6;  // inclusive, 0-indexed
 
-function getValidMoves(board, player) {
+function getValidMoves(board, player, p2HomeCol = 0) {
     const placementSet = new Map();
     const stacks = [];
     const homeRow = player === PA ? 0 : null;
-    const homeCol = player === PB ? 0 : null;
+    const homeCol = player === PB ? (p2HomeCol ?? 0) : null;
 
     if (homeRow !== null) {
         for (let c = HOME_MIN; c <= HOME_MAX; c++) {
@@ -213,16 +264,47 @@ function resolveCombat(board, trigR, trigC, attacker, defender) {
 }
 
 // --- AI ---
-function aiChooseMove(board, supplies, player, aiKnown) {
+// Aggressive heuristic: frontier progress + intercept + willingness to fight.
+// p2HomeCol (0 or 8) tells PB which column it seeds from and which direction is "forward".
+function aiChooseMove(board, supplies, player, aiKnown, p2HomeCol = 0) {
     const enemy = player === PA ? PB : PA;
-    const { placements, stacks } = getValidMoves(board, player);
+    const { placements, stacks } = getValidMoves(board, player, p2HomeCol);
     if (!placements.length && !stacks.length) return null;
 
-    // Check immediate win first
+    // 1. Immediate win
     for (const [r, c] of placements) {
-        const sim = board.map(row => row.map(cell => ({ tiles: cell.tiles.map(t => ({ ...t })) })));
-        sim[r][c].tiles.push({ owner: player, value: 3, faceUp: false });
-        if (hasPath(sim, player)) return { action: 'place', r, c };
+        if (hasPath(quickSim(board, r, c, player), player, p2HomeCol))
+            return { action: 'place', r, c };
+    }
+
+    // 2. Block immediate enemy win
+    for (const [r, c] of placements) {
+        if (hasPath(quickSim(board, r, c, enemy), enemy, p2HomeCol))
+            return { action: 'place', r, c };
+    }
+
+    // Current frontier depths (how far each player's chain reaches along their axis)
+    const myFrontier    = pathFrontier(board, player, p2HomeCol);
+    const enemyFrontier = pathFrontier(board, enemy,  p2HomeCol);
+
+    // Direction helpers
+    // For PA: axis is rows, target is row 8. Higher row = more progress.
+    // For PB: axis is cols, target depends on p2HomeCol.
+    //   homeCol=0 → target col 8 (higher col = more progress)
+    //   homeCol=8 → target col 0 (lower  col = more progress)
+    const pbForward = (p2HomeCol === 0);  // true = higher col is forward for PB
+
+    function axisPos(r, c) {
+        return player === PA ? r : c;
+    }
+    function axisProgress(pos) {
+        if (player === PA) return pos;                     // higher row = more progress
+        return pbForward ? pos : (BOARD_SIZE - 1 - pos);  // normalise to 0..8
+    }
+    function enemyAxisProgress(r, c) {
+        const pos = player === PA ? c : r;  // enemy axis is the other dimension
+        if (player === PB) return pos;      // enemy (PA) progress = row index
+        return pbForward ? pos : (BOARD_SIZE - 1 - pos);
     }
 
     let best = null, bestScore = -Infinity;
@@ -234,23 +316,46 @@ function aiChooseMove(board, supplies, player, aiKnown) {
     for (const move of allMoves) {
         let score = 0;
         const { r, c } = move;
+        const pos      = axisPos(r, c);
+        const progress = axisProgress(pos);
 
-        // Path progress
-        const distNear = player === PA ? r : c;
-        const distFar  = BOARD_SIZE - 1 - distNear;
-        score += (BOARD_SIZE - 1 - Math.floor((distNear + distFar) / 2)) * 5;
+        // A. Raw axis progress toward target — main driving force
+        score += progress * 10;
 
-        // Connectivity
+        // B. Connectivity to own chain — reward extending the connected frontier
         const ownNbrs = neighbors(r, c).filter(([nr, nc]) => cellOwner(board[nr][nc]) === player);
-        score += ownNbrs.length * 8;
+        score += ownNbrs.length * 6;
+        // Bonus if this move advances the frontier (connects to a tile closer to target)
+        const chainFrontier = ownNbrs.length > 0
+            ? Math.max(...ownNbrs.map(([nr, nc]) => axisProgress(axisPos(nr, nc))))
+            : -1;
+        if (chainFrontier >= 0 && progress > chainFrontier) score += 18;  // genuine chain extension
+        if (chainFrontier >= 0 && progress === chainFrontier + 1) score += 10; // tight step forward
 
-        // Enemy proximity — estimate combat outcome
+        // C. Intercept: if enemy frontier is ahead, heavily reward landing in contested zone
+        const enemyProgress = axisProgress(
+            player === PA ? (pbForward ? enemyFrontier : BOARD_SIZE - 1 - enemyFrontier)
+                          : enemyFrontier
+        );
+        const myNormFrontier = axisProgress(myFrontier < 0 ? -1 : myFrontier);
+        if (enemyProgress > myNormFrontier) {
+            // Enemy is ahead — intercept is urgent
+            const enemyAxisPos = player === PA ? c : r;  // enemy moves on this axis
+            const enemyFrontierAxisPos = pathFrontier(board, enemy, p2HomeCol);
+            // Reward being on the column (for PA) or row (for PB) where enemy chain is heading
+            const proximity = Math.max(0, 4 - Math.abs(enemyAxisPos - (BOARD_SIZE / 2 | 0)));
+            score += proximity * 8 + 15;  // urgent intercept bonus
+        }
+
+        // D. Combat willingness — estimate outcome, but don't flee from even fights
         const enemyNbrs = neighbors(r, c).filter(([nr, nc]) => cellOwner(board[nr][nc]) === enemy);
         if (enemyNbrs.length > 0) {
-            let ownPower = ownNbrs.reduce((s, [nr, nc]) => {
-                return s + getCluster(board, nr, nc, player)
-                    .reduce((ss, [cr, cc]) => ss + cellValue(board[cr][cc]), 0);
-            }, 3);
+            let ownPower = 3;  // the tile being placed (unknown value, use median)
+            for (const [nr, nc] of ownNbrs) {
+                for (const [cr, cc] of getCluster(board, nr, nc, player)) {
+                    for (const t of board[cr][cc].tiles) ownPower += t.value;
+                }
+            }
             let enemyPower = 0;
             const seen = new Set();
             for (const [nr, nc] of enemyNbrs) {
@@ -258,24 +363,29 @@ function aiChooseMove(board, supplies, player, aiKnown) {
                     const k = `${cr},${cc}`;
                     if (!seen.has(k)) {
                         seen.add(k);
-                        for (const t of board[cr][cc].tiles) {
+                        for (const t of board[cr][cc].tiles)
                             enemyPower += t.faceUp ? t.value : (aiKnown[k] || 3.5);
-                        }
                     }
                 }
             }
-            score += (ownPower - enemyPower) * 10;
+            // Fight if we have the edge; accept even fights; only retreat if clearly outgunned
+            const delta = ownPower - enemyPower;
+            score += delta * 6;
+            if (delta >= 0) score += 8;  // bonus for picking a winnable fight
         }
 
-        // Stack near enemies
-        if (move.action === 'stack') score += enemyNbrs.length * 6;
+        // E. Stack: worthwhile only when threatening enemy or defending a key position
+        if (move.action === 'stack') {
+            score += enemyNbrs.length * 10;
+            score -= 4;  // slight base cost to prefer expansion over stacking in quiet positions
+        }
 
-        // Penalise revealing a large cluster
+        // F. Minimal cluster-reveal penalty (old value of 2 made AI too passive)
         if (ownNbrs.length > 0) {
             const cluster = getCluster(board, ownNbrs[0][0], ownNbrs[0][1], player);
             const fdCount = cluster.reduce((s, [cr, cc]) =>
                 s + board[cr][cc].tiles.filter(t => !t.faceUp).length, 0);
-            score -= fdCount * 2;
+            score -= fdCount * 0.5;
         }
 
         if (score > bestScore) { bestScore = score; best = move; }
@@ -293,13 +403,15 @@ function aiChooseReveal(board, cluster, player) {
     return [faceDown[0].r, faceDown[0].c];
 }
 
-function aiChooseRecon(board, enemy) {
+function aiChooseRecon(board, enemy, p2HomeCol = 0) {
     const candidates = [];
     for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
             const top = cellTop(board[r][c]);
             if (top && top.owner === enemy && !top.faceUp) {
-                candidates.push([r, c, enemy === PA ? r : c]);
+                // Prioritise tiles deep in enemy's chain (most dangerous face-down tiles)
+                const depth = enemy === PA ? r : (p2HomeCol === 0 ? c : BOARD_SIZE - 1 - c);
+                candidates.push([r, c, depth]);
             }
         }
     }
@@ -315,8 +427,9 @@ function createGameState(roomId) {
         board:         createBoard(),
         supplies:      { [PA]: makeSupply(PA), [PB]: makeSupply(PB) },
         currentPlayer: PA,
-        phase:         'PIE_PLACE',   // PIE_PLACE | PIE_DECISION | MAIN | REVEAL_RULE | RECON | GAME_OVER
+        phase:         'PIE_PLACE',   // PIE_PLACE | PIE_DECISION | PIE_HOME | MAIN | REVEAL_RULE | RECON | GAME_OVER
         piePos:        null,
+        p2HomeCol:     null,          // 0 or 8 — set during PIE_HOME; null until chosen
         revealCluster: [],
         revealPlayer:  null,
         pendingCombat: null,
@@ -356,6 +469,7 @@ function stateView(state, playerNum) {
         currentPlayer: state.currentPlayer,
         phase:         state.phase,
         piePos:        state.piePos,
+        p2HomeCol:     state.p2HomeCol,
         revealCluster: state.revealCluster,
         revealPlayer:  state.revealPlayer,
         reconWinner:   state.reconWinner,
@@ -376,8 +490,8 @@ function broadcastUpdate(room, io) {
 
 // --- TURN LOGIC ---
 function advanceTurn(state) {
-    if (hasPath(state.board, PA)) { endGame(state, PA, 'path'); return; }
-    if (hasPath(state.board, PB)) { endGame(state, PB, 'path'); return; }
+    if (hasPath(state.board, PA, state.p2HomeCol)) { endGame(state, PA, 'path'); return; }
+    if (hasPath(state.board, PB, state.p2HomeCol)) { endGame(state, PB, 'path'); return; }
 
     if (state.supplies[PA].length === 0 && state.supplies[PB].length === 0) {
         let scoreA = 0, scoreB = 0;
@@ -446,7 +560,7 @@ function startRecon(state, room, combatResult) {
     }
 
     if (state.isAiGame && winner === PB) {
-        const pos = aiChooseRecon(state.board, enemy);
+        const pos = aiChooseRecon(state.board, enemy, state.p2HomeCol ?? 0);
         if (pos) {
             const top = cellTop(state.board[pos[0]][pos[1]]);
             if (top) state.aiKnown[`${pos[0]},${pos[1]}`] = top.value;
@@ -535,16 +649,16 @@ function executePlacement(state, room, r, c, isStack) {
 
 function executeAiTurn(state, room) {
     if (state.currentPlayer !== PB || !state.isAiGame) return;
-    const { placements, stacks } = getValidMoves(state.board, PB);
+    const hc = state.p2HomeCol ?? 0;
+    const { placements, stacks } = getValidMoves(state.board, PB, hc);
     if (!placements.length && !stacks.length) { advanceTurn(state); broadcastUpdate(room, io); return; }
 
-    const move = aiChooseMove(state.board, state.supplies, PB, state.aiKnown);
+    const move = aiChooseMove(state.board, state.supplies, PB, state.aiKnown, hc);
     if (!move) { advanceTurn(state); broadcastUpdate(room, io); return; }
 
     executePlacement(state, room, move.r, move.c, move.action === 'stack');
     broadcastUpdate(room, io);
 
-    // If still AI's turn (e.g. after a phase that auto-resolved), keep going
     if (state.phase === 'MAIN' && state.currentPlayer === PB) {
         setTimeout(() => { executeAiTurn(state, room); }, 400);
     }
@@ -611,9 +725,12 @@ io.on('connection', (socket) => {
             state.phase  = 'PIE_DECISION';
             state.currentPlayer = PB;
             state.gameLog.unshift(`P1 opening tile at (${r+1},${c+1})`);
-            // AI auto-decides: always continue (no swap) for simplicity
             if (state.isAiGame) {
-                state.gameLog.unshift('AI declines swap. P2 (AI) plays next.');
+                // AI declines swap, then picks home col: choose the column closest to P1's opening
+                // tile so it seeds directly into P1's projected path.
+                const aiHomeCol = c >= Math.floor(BOARD_SIZE / 2) ? BOARD_SIZE - 1 : 0;
+                state.p2HomeCol = aiHomeCol;
+                state.gameLog.unshift(`AI declines swap. AI seeds from col ${aiHomeCol + 1}. P2 plays next.`);
                 state.phase         = 'MAIN';
                 state.currentPlayer = PB;
                 broadcastUpdate(room, io);
@@ -627,19 +744,29 @@ io.on('connection', (socket) => {
         // PIE_DECISION: P2 swaps or continues (PvP only)
         if (state.phase === 'PIE_DECISION' && playerNum === PB && type === 'pieDecision') {
             if (swap) {
-                // Swap socket assignments and supply ownership
                 [room.p1, room.p2]    = [room.p2, room.p1];
                 state.metadata.p1_id  = room.p1;
                 state.metadata.p2_id  = room.p2;
-                // Tile on board stays as owner:PA (N-S player, now room.p1 / original PB socket)
-                state.currentPlayer   = PB;  // new PB (original PA socket) plays next
-                state.gameLog.unshift('P2 swapped. Takes N-S. P1 (E-W) plays next.');
+                state.currentPlayer   = PB;
+                state.gameLog.unshift('P2 swapped. Takes N-S. P1 (E-W) chooses home edge next.');
                 io.to(room.p1).emit('init', { player: PA, roomId });
                 io.to(room.p2).emit('init', { player: PB, roomId });
             } else {
                 state.currentPlayer = PB;
-                state.gameLog.unshift('No swap. P2 plays next.');
+                state.gameLog.unshift('No swap. P2 (E-W) chooses home edge next.');
             }
+            // Always route to PIE_HOME so PB picks col 1 or col 9
+            state.phase = 'PIE_HOME';
+            broadcastUpdate(room, io);
+            return;
+        }
+
+        // PIE_HOME: PB (E-W player) chooses home edge: col 0 or col 8
+        if (state.phase === 'PIE_HOME' && playerNum === PB && type === 'homeChoice') {
+            const { homeCol } = data;
+            if (homeCol !== 0 && homeCol !== 8) return;
+            state.p2HomeCol = homeCol;
+            state.gameLog.unshift(`P2 seeds from col ${homeCol + 1}. Target: col ${homeCol === 0 ? 9 : 1}.`);
             state.phase = 'MAIN';
             broadcastUpdate(room, io);
             return;
@@ -647,7 +774,8 @@ io.on('connection', (socket) => {
 
         // MAIN: place or stack
         if (state.phase === 'MAIN' && playerNum === state.currentPlayer && (type === 'place' || type === 'stack')) {
-            const { placements, stacks } = getValidMoves(state.board, playerNum);
+            const hc = state.p2HomeCol ?? 0;
+            const { placements, stacks } = getValidMoves(state.board, playerNum, hc);
             const valid = type === 'place'
                 ? placements.some(([vr, vc]) => vr === r && vc === c)
                 : stacks.some(([vr, vc]) => vr === r && vc === c);
