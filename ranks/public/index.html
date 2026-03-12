@@ -153,12 +153,13 @@ function updStatus(){if(!state)return;const el=$('status-msg'),me=state.currentP
 
 function updBar(){const bar=$('action-bar');bar.innerHTML='';if(!state)return;const me=state.currentPlayer===myP,p=state.phase;
     if(p==='PEEK'&&me){mkBtn(bar,'SKIP PEEK','ab',()=>socket.emit('action',{roomId,type:'skipPeek'}));return;}
+    // Confirm/Undo for any pending move (works in PIE_PLACE, ACTION, etc.)
+    if(me&&pending){
+        mkBtn(bar,'CONFIRM','ab go',()=>{socket.emit('action',{roomId,...pending});pending=null;});
+        mkBtn(bar,'UNDO','ab no',()=>{pending=null;strikeTarget=null;strikeFrom=null;updStatus();updBar();draw();});
+        return;
+    }
     if(p==='ACTION'&&me){
-        if(pending){
-            mkBtn(bar,'CONFIRM','ab go',()=>{socket.emit('action',{roomId,...pending});pending=null;});
-            mkBtn(bar,'UNDO','ab no',()=>{pending=null;updStatus();updBar();draw();});
-            return;
-        }
         if(strikeTarget){
             mkBtn(bar,'CANCEL','ab no',()=>{strikeTarget=null;strikeFrom=null;updStatus();updBar();draw();});
             return;
