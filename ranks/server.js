@@ -9,627 +9,451 @@ const USERNAME = process.env.GAME_USERNAME;
 const PASSWORD = process.env.GAME_PASSWORD;
 
 app.use((req, res, next) => {
+    if (!USERNAME) return next();
     const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
     const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
     if (login && password && login === USERNAME && password === PASSWORD) return next();
     res.set('WWW-Authenticate', 'Basic realm="RANKS"');
-    res.status(401).send('Authentication required to access RANKS.');
+    res.status(401).send('Authentication required.');
 });
-
 app.use(express.static('public'));
 
-// ═══ CONSTANTS ═══
-const N = 7;
-const PA = 1;
-const PB = 2;
-const QUAL_THRESHOLD = 21;
+const N = 7, PA = 1, PB = 2, QUAL = 21;
 
-// ═══ HELPERS ═══
-function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function makeSupply(){const t=[];for(let v=1;v<=6;v++)for(let i=0;i<4;i++)t.push(v);return shuffle(t);}
+function createBoard(){return Array.from({length:N},()=>Array.from({length:N},()=>({owner:null,stack:[],faceUp:[]})));}
+function inB(r,c){return r>=0&&r<N&&c>=0&&c<N;}
+function orth(r,c){const o=[];for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){const rr=r+dr,cc=c+dc;if(inB(rr,cc))o.push([rr,cc]);}return o;}
+function empty(cl){return cl.owner===null||cl.stack.length===0;}
+function height(cl){return cl.stack.length;}
+function faceUpScore(cl){let s=0;for(let i=0;i<cl.stack.length;i++)if(cl.faceUp[i])s+=cl.stack[i];return s;}
+
+function createGameState(roomId){
+    return{roomId,board:createBoard(),supplies:{[PA]:makeSupply(),[PB]:makeSupply()},
+        currentPlayer:PA,phase:'PIE_PLACE',passesInRow:0,winner:null,winCondition:null,
+        graveyard:[],ko:{[PA]:null,[PB]:null},lastMove:null,piePos:null,peekDone:false,
+        isAiGame:false,gameLog:[],metadata:{roomId,p1_id:null,p2_id:null,startTime:Date.now()}};
+}
+
+function occupiedCells(b,p){const o=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(!empty(b[r][c])&&b[r][c].owner===p)o.push([r,c]);return o;}
+function emptyCells(b){const o=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(empty(b[r][c]))o.push([r,c]);return o;}
+function enemyAdj(b,p,r,c){const o=[];for(const[rr,cc]of orth(r,c))if(!empty(b[rr][cc])&&b[rr][cc].owner!==p)o.push([rr,cc]);return o;}
+function legalStrikes(b,p){for(const[r,c]of occupiedCells(b,p))if(enemyAdj(b,p,r,c).length>0)return true;return false;}
+
+// Qualification score: sum of face-up values for a player
+function playerQualScore(b,p){
+    let s=0;
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+        const cl=b[r][c];
+        if(!empty(cl)&&cl.owner===p) s+=faceUpScore(cl);
     }
-    return arr;
-}
-
-function makeSupply() {
-    const tiles = [];
-    for (let v = 1; v <= 6; v++)
-        for (let i = 0; i < 4; i++) tiles.push(v);
-    return shuffle(tiles);
-}
-
-function createBoard() {
-    return Array.from({ length: N }, () =>
-        Array.from({ length: N }, () => ({ owner: null, stack: [], faceUp: [] }))
-    );
-}
-
-function inBounds(r, c) { return r >= 0 && r < N && c >= 0 && c < N; }
-
-function orthNeighbors(r, c) {
-    const out = [];
-    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-        const rr = r+dr, cc = c+dc;
-        if (inBounds(rr, cc)) out.push([rr, cc]);
-    }
-    return out;
-}
-
-function cellEmpty(cell) { return cell.owner === null || cell.stack.length === 0; }
-function cellHeight(cell) { return cell.stack.length; }
-function cellFaceUpScore(cell) {
-    let s = 0;
-    for (let i = 0; i < cell.stack.length; i++)
-        if (cell.faceUp[i]) s += cell.stack[i];
     return s;
 }
 
-// ═══ GAME STATE ═══
-function createGameState(roomId) {
-    return {
-        roomId,
-        board: createBoard(),
-        supplies: { [PA]: makeSupply(), [PB]: makeSupply() },
-        currentPlayer: PA,
-        phase: 'PIE_PLACE',
-        passesInRow: 0,
-        winner: null,
-        winCondition: null,
-        graveyard: [],
-        ko: { [PA]: null, [PB]: null },
-        lastMove: null,
-        piePos: null,
-        peekDone: false,
-        isAiGame: false,
-        gameLog: [],
-        metadata: { roomId, p1_id: null, p2_id: null, startTime: Date.now() },
-    };
-}
-
-// ═══ CELL QUERIES ═══
-function occupiedCells(board, player) {
-    const out = [];
-    for (let r = 0; r < N; r++)
-        for (let c = 0; c < N; c++)
-            if (!cellEmpty(board[r][c]) && board[r][c].owner === player)
-                out.push([r, c]);
-    return out;
-}
-
-function emptyCells(board) {
-    const out = [];
-    for (let r = 0; r < N; r++)
-        for (let c = 0; c < N; c++)
-            if (cellEmpty(board[r][c])) out.push([r, c]);
-    return out;
-}
-
-function enemyAdjacentTargets(board, player, r, c) {
-    const out = [];
-    for (const [rr, cc] of orthNeighbors(r, c))
-        if (!cellEmpty(board[rr][cc]) && board[rr][cc].owner !== player)
-            out.push([rr, cc]);
-    return out;
-}
-
-function legalStrikesExist(board, player) {
-    for (const [r, c] of occupiedCells(board, player))
-        if (enemyAdjacentTargets(board, player, r, c).length > 0) return true;
-    return false;
-}
-
-// ═══ QUALIFIED CONNECTION ═══
-function checkQualifiedConnection(board, player) {
-    const nodes = new Map();
-    for (let r = 0; r < N; r++)
-        for (let c = 0; c < N; c++) {
-            const cell = board[r][c];
-            if (!cellEmpty(cell) && cell.owner === player)
-                nodes.set(`${r},${c}`, cellFaceUpScore(cell));
-        }
-    if (nodes.size === 0) return false;
-
-    const adj = {};
-    for (const key of nodes.keys()) {
-        const [r, c] = key.split(',').map(Number);
-        adj[key] = [];
-        for (const [rr, cc] of orthNeighbors(r, c)) {
-            const nk = `${rr},${cc}`;
-            if (nodes.has(nk)) adj[key].push(nk);
-        }
+// Qualified connection: simple path edge-to-edge with face-up score >= QUAL
+function checkQualConn(b,p){
+    const nodes=new Map();
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+        const cl=b[r][c];
+        if(!empty(cl)&&cl.owner===p) nodes.set(`${r},${c}`,faceUpScore(cl));
     }
-
-    let iters = 0;
-    function dfs(starts, goalTest) {
-        for (const s of starts) {
-            const stack = [{ cur: s, seen: new Set([s]), score: nodes.get(s) }];
-            while (stack.length) {
-                if (++iters > 500000) return false;
-                const { cur, seen, score } = stack.pop();
-                if (goalTest(cur) && score >= QUAL_THRESHOLD) return true;
-                for (const nxt of (adj[cur] || [])) {
-                    if (!seen.has(nxt)) {
-                        const ns = new Set(seen); ns.add(nxt);
-                        stack.push({ cur: nxt, seen: ns, score: score + nodes.get(nxt) });
-                    }
-                }
+    if(!nodes.size)return false;
+    const adj={};
+    for(const k of nodes.keys()){
+        const[r,c]=k.split(',').map(Number);
+        adj[k]=[];
+        for(const[rr,cc]of orth(r,c)){const nk=`${rr},${cc}`;if(nodes.has(nk))adj[k].push(nk);}
+    }
+    let it=0;
+    function dfs(starts,goal){
+        for(const s of starts){
+            const stk=[{c:s,seen:new Set([s]),sc:nodes.get(s)}];
+            while(stk.length){if(++it>500000)return false;const{c:cur,seen,sc}=stk.pop();
+                if(goal(cur)&&sc>=QUAL)return true;
+                for(const nx of(adj[cur]||[]))if(!seen.has(nx)){const ns=new Set(seen);ns.add(nx);stk.push({c:nx,seen:ns,sc:sc+nodes.get(nx)});}
             }
-        }
-        return false;
+        }return false;
     }
-
-    const rowStarts = [];
-    for (let c = 0; c < N; c++) if (nodes.has(`0,${c}`)) rowStarts.push(`0,${c}`);
-    if (rowStarts.length && dfs(rowStarts, k => k.split(',')[0] === String(N-1))) return true;
-
-    const colStarts = [];
-    for (let r = 0; r < N; r++) if (nodes.has(`${r},0`)) colStarts.push(`${r},0`);
-    if (colStarts.length && dfs(colStarts, k => k.split(',')[1] === String(N-1))) return true;
-
+    const rs=[];for(let c=0;c<N;c++)if(nodes.has(`0,${c}`))rs.push(`0,${c}`);
+    if(rs.length&&dfs(rs,k=>k.split(',')[0]===String(N-1)))return true;
+    const cs=[];for(let r=0;r<N;r++)if(nodes.has(`${r},0`))cs.push(`${r},0`);
+    if(cs.length&&dfs(cs,k=>k.split(',')[1]===String(N-1)))return true;
     return false;
 }
 
-// ═══ VICTORY ═══
-function checkExtermination(state) {
-    for (const p of [PA, PB])
-        if (occupiedCells(state.board, p).length === 0 && state.supplies[p].length === 0) return p;
+function checkExtermination(st){
+    for(const p of[PA,PB])if(occupiedCells(st.board,p).length===0&&st.supplies[p].length===0)return p;
     return null;
 }
 
-function checkVictory(state, attackerForSimul) {
-    const c1 = checkQualifiedConnection(state.board, PA);
-    const c2 = checkQualifiedConnection(state.board, PB);
-    if (c1 && c2) {
-        state.winner = attackerForSimul || state.currentPlayer;
-        state.winCondition = 'Qualified Connection (simultaneous)';
-        state.phase = 'GAME_OVER'; return true;
-    }
-    if (c1) { state.winner = PA; state.winCondition = 'Qualified Connection'; state.phase = 'GAME_OVER'; return true; }
-    if (c2) { state.winner = PB; state.winCondition = 'Qualified Connection'; state.phase = 'GAME_OVER'; return true; }
+function checkVictory(st,atkr){
+    const c1=checkQualConn(st.board,PA),c2=checkQualConn(st.board,PB);
+    if(c1&&c2){st.winner=atkr||st.currentPlayer;st.winCondition='Qualified Connection (simultaneous)';st.phase='GAME_OVER';return true;}
+    if(c1){st.winner=PA;st.winCondition='Qualified Connection';st.phase='GAME_OVER';return true;}
+    if(c2){st.winner=PB;st.winCondition='Qualified Connection';st.phase='GAME_OVER';return true;}
     return false;
 }
 
-// ═══ SCORING ═══
-function bestPathScore(board, player) {
-    const nodes = occupiedCells(board, player);
-    if (!nodes.length) return { score: 0, len: 0 };
-    const nodeSet = new Set(nodes.map(([r,c]) => `${r},${c}`));
-    const weights = {};
-    const adj = {};
-    for (const [r,c] of nodes) {
-        const k = `${r},${c}`;
-        weights[k] = cellFaceUpScore(board[r][c]);
-        adj[k] = [];
-        for (const [rr,cc] of orthNeighbors(r,c))
-            if (nodeSet.has(`${rr},${cc}`)) adj[k].push(`${rr},${cc}`);
-    }
-    let best = 0, bestLen = 0, iters = 0;
-    for (const [sr,sc] of nodes) {
-        const sk = `${sr},${sc}`;
-        const stack = [{ cur: sk, seen: new Set([sk]), sc: weights[sk], ln: 1 }];
-        while (stack.length) {
-            if (++iters > 500000) break;
-            const { cur, seen, sc, ln } = stack.pop();
-            if (sc >= 1 && (sc > best || (sc === best && ln > bestLen))) { best = sc; bestLen = ln; }
-            for (const nxt of adj[cur]) {
-                if (!seen.has(nxt)) {
-                    const ns = new Set(seen); ns.add(nxt);
-                    stack.push({ cur: nxt, seen: ns, sc: sc + weights[nxt], ln: ln + 1 });
-                }
-            }
-        }
-        if (iters > 500000) break;
-    }
-    return { score: best, len: bestLen };
+// v0.6.2 scoring: sum all face-up tiles on board
+function finalizeByPasses(st){
+    const s1=playerQualScore(st.board,PA), s2=playerQualScore(st.board,PB);
+    const t1=occupiedCells(st.board,PA).length, t2=occupiedCells(st.board,PB).length;
+    st.phase='GAME_OVER';
+    if(s1>s2)st.winner=PA;
+    else if(s2>s1)st.winner=PB;
+    else if(t1>t2)st.winner=PA;
+    else if(t2>t1)st.winner=PB;
+    else st.winner=null;
+    st.winCondition=`Scoring (W:${s1} tiles:${t1} vs B:${s2} tiles:${t2})`;
 }
 
-function finalizeByPasses(state) {
-    const s1 = bestPathScore(state.board, PA);
-    const s2 = bestPathScore(state.board, PB);
-    state.phase = 'GAME_OVER';
-    if (s1.score > s2.score) state.winner = PA;
-    else if (s2.score > s1.score) state.winner = PB;
-    else if (s1.len > s2.len) state.winner = PA;
-    else if (s2.len > s1.len) state.winner = PB;
-    else state.winner = null;
-    state.winCondition = `Scoring (W: ${s1.score}/${s1.len} vs B: ${s2.score}/${s2.len})`;
+// Combat
+function resolveStrike(st,player,aR,aC,tR,tC){
+    const b=st.board, enemy=player===PA?PB:PA, ac=b[aR][aC];
+    ac.faceUp[ac.stack.length-1]=true; // reveal attacker's top
+
+    const atkK=new Set([`${aR},${aC}`]);
+    for(const[rr,cc]of orth(aR,aC))if(!empty(b[rr][cc])&&b[rr][cc].owner===player)atkK.add(`${rr},${cc}`);
+    const defK=new Set([`${tR},${tC}`]);
+    for(const[rr,cc]of orth(tR,tC))if(!empty(b[rr][cc])&&b[rr][cc].owner===enemy)defK.add(`${rr},${cc}`);
+
+    for(const k of[...atkK,...defK]){const[r,c]=k.split(',').map(Number);b[r][c].faceUp=b[r][c].faceUp.map(()=>true);}
+
+    let aS=0,dS=0;
+    for(const k of atkK){const[r,c]=k.split(',').map(Number);aS+=b[r][c].stack.reduce((a,v)=>a+v,0);}
+    for(const k of defK){const[r,c]=k.split(',').map(Number);dS+=b[r][c].stack.reduce((a,v)=>a+v,0);}
+
+    st.gameLog.unshift(`P${player} strikes (${aR+1},${aC+1})->(${tR+1},${tC+1}): ATK ${aS} vs DEF ${dS}`);
+
+    const cap=[];
+    function capCell(r,c){const cl=b[r][c];for(const v of cl.stack)st.graveyard.push({owner:cl.owner,value:v});cap.push({owner:cl.owner,r,c});cl.stack=[];cl.faceUp=[];cl.owner=null;}
+
+    if(aS>dS){capCell(tR,tC);st.gameLog.unshift(`  Defender captured at (${tR+1},${tC+1})`);}
+    else if(dS>aS){capCell(aR,aC);st.gameLog.unshift(`  Attacker captured at (${aR+1},${aC+1})`);}
+    else{capCell(aR,aC);capCell(tR,tC);st.gameLog.unshift(`  Tie: both captured`);}
+
+    st.ko={[PA]:null,[PB]:null};
+    for(const cs of cap)st.ko[cs.owner]={r:cs.r,c:cs.c};
+    st.lastMove={player,r:aR,c:aC};
+
+    const ext=checkExtermination(st);
+    if(ext!==null){st.winner=ext===PA?PB:PA;st.winCondition='Extermination';st.phase='GAME_OVER';return;}
+    checkVictory(st,player);
 }
 
-// ═══ COMBAT ═══
-function resolveStrike(state, player, atkR, atkC, tgtR, tgtC) {
-    const board = state.board;
-    const enemy = player === PA ? PB : PA;
-    const aCell = board[atkR][atkC];
-
-    // Reveal attacker's top
-    if (aCell.stack.length >= 1) aCell.faceUp[aCell.stack.length - 1] = true;
-
-    // Build clusters
-    const atkKeys = new Set([`${atkR},${atkC}`]);
-    for (const [rr,cc] of orthNeighbors(atkR, atkC))
-        if (!cellEmpty(board[rr][cc]) && board[rr][cc].owner === player) atkKeys.add(`${rr},${cc}`);
-    const defKeys = new Set([`${tgtR},${tgtC}`]);
-    for (const [rr,cc] of orthNeighbors(tgtR, tgtC))
-        if (!cellEmpty(board[rr][cc]) && board[rr][cc].owner === enemy) defKeys.add(`${rr},${cc}`);
-
-    // Reveal all
-    for (const key of [...atkKeys, ...defKeys]) {
-        const [r,c] = key.split(',').map(Number);
-        board[r][c].faceUp = board[r][c].faceUp.map(() => true);
-    }
-
-    // Sum
-    let atkSum = 0, defSum = 0;
-    for (const key of atkKeys) { const [r,c] = key.split(',').map(Number); atkSum += board[r][c].stack.reduce((s,v) => s+v, 0); }
-    for (const key of defKeys) { const [r,c] = key.split(',').map(Number); defSum += board[r][c].stack.reduce((s,v) => s+v, 0); }
-
-    state.gameLog.unshift(`P${player} strikes (${atkR+1},${atkC+1})->(${tgtR+1},${tgtC+1}): ATK ${atkSum} vs DEF ${defSum}`);
-
-    const captured = [];
-    function captureCell(r, c) {
-        const cell = board[r][c];
-        for (const v of cell.stack) state.graveyard.push({ owner: cell.owner, value: v });
-        captured.push({ owner: cell.owner, r, c });
-        cell.stack = []; cell.faceUp = []; cell.owner = null;
-    }
-
-    if (atkSum > defSum) {
-        captureCell(tgtR, tgtC);
-        state.gameLog.unshift(`  Defender captured at (${tgtR+1},${tgtC+1})`);
-    } else if (defSum > atkSum) {
-        captureCell(atkR, atkC);
-        state.gameLog.unshift(`  Attacker captured at (${atkR+1},${atkC+1})`);
-    } else {
-        captureCell(atkR, atkC); captureCell(tgtR, tgtC);
-        state.gameLog.unshift(`  Tie: both captured`);
-    }
-
-    state.ko = { [PA]: null, [PB]: null };
-    for (const cs of captured) state.ko[cs.owner] = { r: cs.r, c: cs.c };
-    state.lastMove = { player, r: atkR, c: atkC };
-
-    const ext = checkExtermination(state);
-    if (ext !== null) {
-        state.winner = ext === PA ? PB : PA;
-        state.winCondition = 'Extermination';
-        state.phase = 'GAME_OVER';
-        return;
-    }
-    checkVictory(state, player);
+function actionDeploy(st,p,r,c){
+    if(st.supplies[p].length===0)return false;
+    if(!empty(st.board[r][c]))return false;
+    if(st.ko[p]&&st.ko[p].r===r&&st.ko[p].c===c)return false;
+    const v=st.supplies[p].shift();
+    st.board[r][c]={owner:p,stack:[v],faceUp:[false]};
+    st.lastMove={player:p,r,c};
+    st.ko={[PA]:null,[PB]:null};
+    st.gameLog.unshift(`P${p} deploys at (${r+1},${c+1})`);
+    checkVictory(st);return true;
+}
+function actionReinforce(st,p,r,c){
+    if(st.supplies[p].length===0)return false;
+    const cl=st.board[r][c];
+    if(empty(cl)||cl.owner!==p||height(cl)!==1)return false;
+    const v=st.supplies[p].shift();
+    cl.stack.push(v);cl.faceUp.push(false);
+    st.lastMove={player:p,r,c};
+    st.ko={[PA]:null,[PB]:null};
+    st.gameLog.unshift(`P${p} reinforces at (${r+1},${c+1})`);
+    checkVictory(st);return true;
+}
+function actionStrike(st,p,aR,aC,tR,tC){
+    const a=st.board[aR][aC],t=st.board[tR][tC];
+    if(empty(a)||a.owner!==p)return false;
+    if(empty(t)||t.owner===p)return false;
+    if(Math.abs(aR-tR)+Math.abs(aC-tC)!==1)return false;
+    resolveStrike(st,p,aR,aC,tR,tC);return true;
+}
+function actionPass(st,p){
+    st.gameLog.unshift(`P${p} passes`);st.passesInRow++;
+    st.ko={[PA]:null,[PB]:null};
+    if(st.passesInRow>=2)finalizeByPasses(st);
+}
+function advanceTurn(st){
+    if(st.phase==='GAME_OVER')return;
+    st.currentPlayer=st.currentPlayer===PA?PB:PA;
+    st.peekDone=false;st.phase='PEEK';
 }
 
-// ═══ ACTIONS ═══
-function actionDeploy(state, player, r, c) {
-    if (state.supplies[player].length === 0) return false;
-    if (!cellEmpty(state.board[r][c])) return false;
-    if (state.ko[player] && state.ko[player].r === r && state.ko[player].c === c) return false;
-    const v = state.supplies[player].shift();
-    state.board[r][c] = { owner: player, stack: [v], faceUp: [false] };
-    state.lastMove = { player, r, c };
-    state.ko = { [PA]: null, [PB]: null };
-    state.gameLog.unshift(`P${player} deploys at (${r+1},${c+1})`);
-    checkVictory(state);
-    return true;
-}
-
-function actionReinforce(state, player, r, c) {
-    if (state.supplies[player].length === 0) return false;
-    const cell = state.board[r][c];
-    if (cellEmpty(cell) || cell.owner !== player || cellHeight(cell) !== 1) return false;
-    const v = state.supplies[player].shift();
-    cell.stack.push(v);
-    cell.faceUp.push(false);
-    state.lastMove = { player, r, c };
-    state.ko = { [PA]: null, [PB]: null };
-    state.gameLog.unshift(`P${player} reinforces at (${r+1},${c+1})`);
-    checkVictory(state);
-    return true;
-}
-
-function actionStrike(state, player, atkR, atkC, tgtR, tgtC) {
-    const a = state.board[atkR][atkC], t = state.board[tgtR][tgtC];
-    if (cellEmpty(a) || a.owner !== player) return false;
-    if (cellEmpty(t) || t.owner === player) return false;
-    if (Math.abs(atkR-tgtR) + Math.abs(atkC-tgtC) !== 1) return false;
-    resolveStrike(state, player, atkR, atkC, tgtR, tgtC);
-    return true;
-}
-
-function actionPass(state, player) {
-    state.gameLog.unshift(`P${player} passes`);
-    state.passesInRow++;
-    state.ko = { [PA]: null, [PB]: null };
-    if (state.passesInRow >= 2) finalizeByPasses(state);
-}
-
-// ═══ TURN FLOW ═══
-function advanceTurn(state) {
-    if (state.phase === 'GAME_OVER') return;
-    state.currentPlayer = state.currentPlayer === PA ? PB : PA;
-    state.peekDone = false;
-    state.phase = 'PEEK';
-}
-
-// ═══ STATE VIEW ═══
-function stateView(state, viewer) {
-    const boardView = state.board.map(row =>
-        row.map(cell => {
-            if (cellEmpty(cell)) return { owner: null, tiles: [] };
-            return {
-                owner: cell.owner,
-                height: cellHeight(cell),
-                tiles: cell.stack.map((v, i) => ({
-                    value: (cell.faceUp[i] || cell.owner === viewer) ? v : null,
-                    faceUp: cell.faceUp[i],
-                    owner: cell.owner,
-                })),
-            };
-        })
-    );
-    return {
-        board: boardView,
-        supplies: { [PA]: state.supplies[PA].length, [PB]: state.supplies[PB].length },
-        myNextDraw: state.supplies[viewer]?.[0] ?? null,
-        currentPlayer: state.currentPlayer,
-        phase: state.phase,
-        winner: state.winner,
-        winCondition: state.winCondition,
-        graveyard: state.graveyard,
-        ko: state.ko,
-        lastMove: state.lastMove,
-        peekDone: state.peekDone,
-        passesInRow: state.passesInRow,
-        gameLog: state.gameLog.slice(0, 40),
-        isAiGame: state.isAiGame,
-        qualThreshold: QUAL_THRESHOLD,
-        boardSize: N,
+// State view: NEVER reveal face-down values, even to owner
+function stateView(st,viewer){
+    const bv=st.board.map(row=>row.map(cl=>{
+        if(empty(cl))return{owner:null,tiles:[]};
+        return{owner:cl.owner,height:height(cl),
+            tiles:cl.stack.map((v,i)=>({value:cl.faceUp[i]?v:null,faceUp:cl.faceUp[i],owner:cl.owner}))};
+    }));
+    return{board:bv,
+        supplies:{[PA]:st.supplies[PA].length,[PB]:st.supplies[PB].length},
+        myNextDraw:st.supplies[viewer]?.[0]??null,
+        currentPlayer:st.currentPlayer,phase:st.phase,winner:st.winner,winCondition:st.winCondition,
+        graveyard:st.graveyard,ko:st.ko,lastMove:st.lastMove,peekDone:st.peekDone,
+        passesInRow:st.passesInRow,gameLog:st.gameLog.slice(0,50),isAiGame:st.isAiGame,
+        qualThreshold:QUAL,boardSize:N,
+        qualScores:{[PA]:playerQualScore(st.board,PA),[PB]:playerQualScore(st.board,PB)},
     };
 }
 
-function broadcastUpdate(room) {
-    const state = room.state;
-    if (room.p1 && room.p1 !== 'AI') io.to(room.p1).emit('update', stateView(state, PA));
-    if (room.p2 && room.p2 !== 'AI') io.to(room.p2).emit('update', stateView(state, PB));
+function broadcastUpdate(room){
+    const st=room.state;
+    if(room.p1&&room.p1!=='AI')io.to(room.p1).emit('update',stateView(st,PA));
+    if(room.p2&&room.p2!=='AI')io.to(room.p2).emit('update',stateView(st,PB));
 }
 
-// ═══ AI ═══
-function aiChooseMove(state) {
-    const board = state.board, player = PB, enemy = PA;
-    const hasSupply = state.supplies[player].length > 0;
-    if (!hasSupply && !legalStrikesExist(board, player)) return { type: 'pass' };
-    if (!hasSupply) return aiBestStrike(board, player);
+// ═══ AI — connection-oriented ═══
+function bfsReachable(b,p,starts){
+    const seen=new Set(starts.map(([r,c])=>`${r},${c}`));
+    const q=[...starts];
+    while(q.length){const[r,c]=q.shift();for(const[rr,cc]of orth(r,c)){const k=`${rr},${cc}`;if(!seen.has(k)&&!empty(b[rr][cc])&&b[rr][cc].owner===p){seen.add(k);q.push([rr,cc]);}}}
+    return seen;
+}
 
-    const forbidden = state.ko[player];
-
-    // Immediate win
-    for (const [r,c] of emptyCells(board)) {
-        if (forbidden && forbidden.r === r && forbidden.c === c) continue;
-        const sim = JSON.parse(JSON.stringify(board));
-        sim[r][c] = { owner: player, stack: [1], faceUp: [false] };
-        if (checkQualifiedConnection(sim, player)) return { type: 'deploy', r, c };
+function connProgress(b,p){
+    // Measure best connection progress for both axes
+    let best=0;
+    // Row axis: row 0 -> row N-1
+    const topCells=[];for(let c=0;c<N;c++)if(!empty(b[0][c])&&b[0][c].owner===p)topCells.push([0,c]);
+    if(topCells.length){
+        const reached=bfsReachable(b,p,topCells);
+        let maxRow=0;for(const k of reached){const r=parseInt(k);if(r>maxRow)maxRow=r;}
+        best=Math.max(best,maxRow/(N-1));
     }
-    // Block
-    for (const [r,c] of emptyCells(board)) {
-        if (forbidden && forbidden.r === r && forbidden.c === c) continue;
-        const sim = JSON.parse(JSON.stringify(board));
-        sim[r][c] = { owner: enemy, stack: [1], faceUp: [false] };
-        if (checkQualifiedConnection(sim, enemy)) return { type: 'deploy', r, c };
+    const botCells=[];for(let c=0;c<N;c++)if(!empty(b[N-1][c])&&b[N-1][c].owner===p)botCells.push([N-1,c]);
+    if(botCells.length){
+        const reached=bfsReachable(b,p,botCells);
+        let minRow=N-1;for(const k of reached){const r=parseInt(k);if(r<minRow)minRow=r;}
+        best=Math.max(best,(N-1-minRow)/(N-1));
+    }
+    // Col axis
+    const leftCells=[];for(let r=0;r<N;r++)if(!empty(b[r][0])&&b[r][0].owner===p)leftCells.push([r,0]);
+    if(leftCells.length){
+        const reached=bfsReachable(b,p,leftCells);
+        let maxCol=0;for(const k of reached){const c=parseInt(k.split(',')[1]);if(c>maxCol)maxCol=c;}
+        best=Math.max(best,maxCol/(N-1));
+    }
+    const rightCells=[];for(let r=0;r<N;r++)if(!empty(b[r][N-1])&&b[r][N-1].owner===p)rightCells.push([r,N-1]);
+    if(rightCells.length){
+        const reached=bfsReachable(b,p,rightCells);
+        let minCol=N-1;for(const k of reached){const c=parseInt(k.split(',')[1]);if(c<minCol)minCol=c;}
+        best=Math.max(best,(N-1-minCol)/(N-1));
+    }
+    return best; // 0..1, 1 = fully connected
+}
+
+function aiBestAxis(b,p){
+    // Determine which axis is most promising
+    let bestAxis='row',bestProgress=-1;
+    // Row: check from top
+    const topStarts=[];for(let c=0;c<N;c++)if(!empty(b[0][c])&&b[0][c].owner===p)topStarts.push([0,c]);
+    if(topStarts.length){const reached=bfsReachable(b,p,topStarts);let mx=0;for(const k of reached)mx=Math.max(mx,parseInt(k));if(mx>bestProgress){bestProgress=mx;bestAxis='row';}}
+    // Col: check from left
+    const leftStarts=[];for(let r=0;r<N;r++)if(!empty(b[r][0])&&b[r][0].owner===p)leftStarts.push([r,0]);
+    if(leftStarts.length){const reached=bfsReachable(b,p,leftStarts);let mx=0;for(const k of reached)mx=Math.max(mx,parseInt(k.split(',')[1]));if(mx>bestProgress){bestProgress=mx;bestAxis='col';}}
+    return{axis:bestAxis,progress:bestProgress};
+}
+
+function aiChooseMove(st){
+    const b=st.board,p=PB,e=PA;
+    const hasS=st.supplies[p].length>0;
+    if(!hasS&&!legalStrikes(b,p))return{type:'pass'};
+    if(!hasS)return aiBestStrike(b,p);
+
+    const forbidden=st.ko[p];
+
+    // Immediate win/block
+    for(const[r,c]of emptyCells(b)){
+        if(forbidden&&forbidden.r===r&&forbidden.c===c)continue;
+        const sim=JSON.parse(JSON.stringify(b));
+        sim[r][c]={owner:p,stack:[1],faceUp:[false]};
+        if(checkQualConn(sim,p))return{type:'deploy',r,c};
+    }
+    for(const[r,c]of emptyCells(b)){
+        if(forbidden&&forbidden.r===r&&forbidden.c===c)continue;
+        const sim=JSON.parse(JSON.stringify(b));
+        sim[r][c]={owner:e,stack:[1],faceUp:[false]};
+        if(checkQualConn(sim,e))return{type:'deploy',r,c};
     }
 
-    const moves = [];
-    const ownSet = new Set(occupiedCells(board, player).map(([r,c]) => `${r},${c}`));
-    const center = (N-1)/2;
+    const myInfo=aiBestAxis(b,p);
+    const ownSet=new Set(occupiedCells(b,p).map(([r,c])=>`${r},${c}`));
+    const center=(N-1)/2;
+    const moves=[];
 
-    for (const [r,c] of emptyCells(board)) {
-        if (forbidden && forbidden.r === r && forbidden.c === c) continue;
-        let s = 0;
-        for (const [rr,cc] of orthNeighbors(r,c)) if (ownSet.has(`${rr},${cc}`)) s += 10;
-        s += 3*(6 - (Math.abs(r-center) + Math.abs(c-center)));
-        if (r===0||r===N-1||c===0||c===N-1) s += 5;
-        moves.push({ type: 'deploy', r, c, score: s });
+    // Deploy: score by connection contribution
+    for(const[r,c]of emptyCells(b)){
+        if(forbidden&&forbidden.r===r&&forbidden.c===c)continue;
+        let s=0;
+        // Adjacency to own chain
+        let adjOwn=0;
+        for(const[rr,cc]of orth(r,c))if(ownSet.has(`${rr},${cc}`))adjOwn++;
+        s+=adjOwn*12;
+
+        // Connection direction bonus
+        if(myInfo.axis==='row'){
+            // Reward cells that advance toward far row, penalize lateral spread
+            s+=(r===0||r===N-1)?8:0; // edge bonus
+            // Prefer cells beyond current frontier
+            if(r>myInfo.progress)s+=15;
+            // Slight center column preference
+            s+=3*(3-Math.abs(c-center));
+        } else {
+            s+=(c===0||c===N-1)?8:0;
+            if(c>myInfo.progress)s+=15;
+            s+=3*(3-Math.abs(r-center));
+        }
+
+        // Block enemy path: reward cells near enemy frontier
+        const eInfo=aiBestAxis(b,e);
+        if(eInfo.progress>=3){
+            if(myInfo.axis==='row'&&eInfo.axis==='col')s+=Math.abs(c-eInfo.progress)<2?10:0;
+            else if(myInfo.axis==='col'&&eInfo.axis==='row')s+=Math.abs(r-eInfo.progress)<2?10:0;
+        }
+
+        moves.push({type:'deploy',r,c,score:s});
     }
 
-    for (const [r,c] of occupiedCells(board, player)) {
-        if (cellHeight(board[r][c]) === 1) {
-            let s = enemyAdjacentTargets(board, player, r, c).length * 15;
-            moves.push({ type: 'reinforce', r, c, score: s });
+    // Reinforce
+    for(const[r,c]of occupiedCells(b,p)){
+        if(height(b[r][c])===1){
+            let s=enemyAdj(b,p,r,c).length*18-4;
+            moves.push({type:'reinforce',r,c,score:s});
         }
     }
 
-    for (const [r,c] of occupiedCells(board, player)) {
-        for (const [tr,tc] of enemyAdjacentTargets(board, player, r, c)) {
-            let atkS = board[r][c].stack.reduce((a,v)=>a+v,0);
-            for (const [rr,cc] of orthNeighbors(r,c))
-                if (!cellEmpty(board[rr][cc]) && board[rr][cc].owner === player) atkS += board[rr][cc].stack.reduce((a,v)=>a+v,0);
-            let defS = board[tr][tc].stack.reduce((a,v)=>a+v,0);
-            for (const [rr,cc] of orthNeighbors(tr,tc))
-                if (!cellEmpty(board[rr][cc]) && board[rr][cc].owner !== player) defS += board[rr][cc].stack.reduce((a,v)=>a+v,0);
-            let s = atkS > defS ? (atkS-defS)*3 + 5 : -(defS-atkS)*4;
-            moves.push({ type: 'strike', atkR: r, atkC: c, tgtR: tr, tgtC: tc, score: s });
+    // Strike
+    for(const[r,c]of occupiedCells(b,p)){
+        for(const[tr,tc]of enemyAdj(b,p,r,c)){
+            let aS=b[r][c].stack.reduce((a,v)=>a+v,0);
+            for(const[rr,cc]of orth(r,c))if(!empty(b[rr][cc])&&b[rr][cc].owner===p)aS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
+            let dS=b[tr][tc].stack.reduce((a,v)=>a+v,0);
+            for(const[rr,cc]of orth(tr,tc))if(!empty(b[rr][cc])&&b[rr][cc].owner!==p)dS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
+            let s=aS>dS?(aS-dS)*3+8:-(dS-aS)*4;
+            // Bonus for striking enemy tiles that block our path
+            if(myInfo.axis==='row'&&(tr===0||tr===N-1))s+=6;
+            if(myInfo.axis==='col'&&(tc===0||tc===N-1))s+=6;
+            moves.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:s});
         }
     }
 
-    if (!moves.length) return { type: 'pass' };
-    moves.sort((a,b) => b.score - a.score);
+    if(!moves.length)return{type:'pass'};
+    moves.sort((a,b)=>b.score-a.score);
     return moves[0];
 }
 
-function aiBestStrike(board, player) {
-    const strikes = [];
-    for (const [r,c] of occupiedCells(board, player))
-        for (const [tr,tc] of enemyAdjacentTargets(board, player, r, c)) {
-            let s = board[r][c].stack.reduce((a,v)=>a+v,0);
-            strikes.push({ type: 'strike', atkR: r, atkC: c, tgtR: tr, tgtC: tc, score: s });
-        }
-    strikes.sort((a,b) => b.score - a.score);
-    return strikes[0] || { type: 'pass' };
+function aiBestStrike(b,p){
+    const s=[];
+    for(const[r,c]of occupiedCells(b,p))for(const[tr,tc]of enemyAdj(b,p,r,c))
+        s.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:b[r][c].stack.reduce((a,v)=>a+v,0)});
+    s.sort((a,b)=>b.score-a.score);
+    return s[0]||{type:'pass'};
 }
 
-function executeAiTurn(state, room) {
-    if (state.currentPlayer !== PB || !state.isAiGame || state.phase === 'GAME_OVER') return;
-    if (state.phase === 'PEEK') state.phase = 'ACTION';
-
-    const move = aiChooseMove(state);
-    if (move.type === 'deploy') { state.passesInRow = 0; actionDeploy(state, PB, move.r, move.c); }
-    else if (move.type === 'reinforce') { state.passesInRow = 0; actionReinforce(state, PB, move.r, move.c); }
-    else if (move.type === 'strike') { state.passesInRow = 0; actionStrike(state, PB, move.atkR, move.atkC, move.tgtR, move.tgtC); }
-    else actionPass(state, PB);
-
-    if (state.phase !== 'GAME_OVER') advanceTurn(state);
+function executeAiTurn(st,room){
+    if(st.currentPlayer!==PB||!st.isAiGame||st.phase==='GAME_OVER')return;
+    if(st.phase==='PEEK')st.phase='ACTION';
+    const mv=aiChooseMove(st);
+    if(mv.type==='deploy'){st.passesInRow=0;actionDeploy(st,PB,mv.r,mv.c);}
+    else if(mv.type==='reinforce'){st.passesInRow=0;actionReinforce(st,PB,mv.r,mv.c);}
+    else if(mv.type==='strike'){st.passesInRow=0;actionStrike(st,PB,mv.atkR,mv.atkC,mv.tgtR,mv.tgtC);}
+    else actionPass(st,PB);
+    if(st.phase!=='GAME_OVER')advanceTurn(st);
     broadcastUpdate(room);
 }
 
-// ═══ ROOMS ═══
-const rooms = {};
-
-io.on('connection', (socket) => {
-    socket.on('joinGame', (inputRoomId) => {
-        let roomId = String(inputRoomId).toUpperCase().trim();
-        const isAI = roomId === 'PLAYAI';
-        if (isAI) roomId = `AI_${socket.id}`;
-
-        if (!rooms[roomId]) {
-            const state = createGameState(roomId);
-            state.isAiGame = isAI;
-            state.metadata.p1_id = socket.id;
-            state.metadata.p2_id = isAI ? 'AI' : null;
-            rooms[roomId] = { state, p1: socket.id, p2: isAI ? 'AI' : null };
-            socket.join(roomId);
-            socket.emit('init', { player: PA, roomId });
-            if (isAI) socket.emit('update', stateView(state, PA));
+// ═══ ROOMS & SOCKETS ═══
+const rooms={};
+io.on('connection',(socket)=>{
+    socket.on('joinGame',(inputRoomId)=>{
+        let roomId=String(inputRoomId).toUpperCase().trim();
+        const isAI=roomId==='PLAYAI';
+        if(isAI)roomId=`AI_${socket.id}`;
+        if(!rooms[roomId]){
+            const st=createGameState(roomId);st.isAiGame=isAI;
+            st.metadata.p1_id=socket.id;st.metadata.p2_id=isAI?'AI':null;
+            rooms[roomId]={state:st,p1:socket.id,p2:isAI?'AI':null};
+            socket.join(roomId);socket.emit('init',{player:PA,roomId});
+            if(isAI)socket.emit('update',stateView(st,PA));
             else socket.emit('waiting');
-        } else if (rooms[roomId].p2 === null) {
-            rooms[roomId].p2 = socket.id;
-            rooms[roomId].state.metadata.p2_id = socket.id;
-            socket.join(roomId);
-            socket.emit('init', { player: PB, roomId });
-            io.to(rooms[roomId].p1).emit('init', { player: PA, roomId });
+        }else if(rooms[roomId].p2===null){
+            rooms[roomId].p2=socket.id;rooms[roomId].state.metadata.p2_id=socket.id;
+            socket.join(roomId);socket.emit('init',{player:PB,roomId});
+            io.to(rooms[roomId].p1).emit('init',{player:PA,roomId});
             broadcastUpdate(rooms[roomId]);
-        } else {
-            socket.emit('roomFull');
-        }
+        }else socket.emit('roomFull');
     });
 
-    socket.on('rejoinGame', ({ roomId, player }) => {
-        const room = rooms[roomId];
-        if (!room) { socket.emit('rejoinFailed', 'Room not found'); return; }
-        if (room.state.phase === 'GAME_OVER') { socket.emit('rejoinFailed', 'Game already over'); return; }
-        if (player === PA) { room.p1 = socket.id; room.state.metadata.p1_id = socket.id; }
-        else if (player === PB && room.p2 !== 'AI') { room.p2 = socket.id; room.state.metadata.p2_id = socket.id; }
-        else { socket.emit('rejoinFailed', 'Invalid seat'); return; }
-        socket.join(roomId);
-        socket.emit('init', { player, roomId });
-        socket.emit('update', stateView(room.state, player));
+    socket.on('rejoinGame',({roomId,player})=>{
+        const room=rooms[roomId];if(!room){socket.emit('rejoinFailed','Room not found');return;}
+        if(room.state.phase==='GAME_OVER'){socket.emit('rejoinFailed','Game over');return;}
+        if(player===PA){room.p1=socket.id;room.state.metadata.p1_id=socket.id;}
+        else if(player===PB&&room.p2!=='AI'){room.p2=socket.id;room.state.metadata.p2_id=socket.id;}
+        else{socket.emit('rejoinFailed','Invalid');return;}
+        socket.join(roomId);socket.emit('init',{player,roomId});
+        socket.emit('update',stateView(room.state,player));
     });
 
-    socket.on('action', (data) => {
-        const { roomId, type, r, c, r2, c2, swap } = data;
-        const room = rooms[roomId];
-        if (!room) return;
-        const state = room.state;
-        const playerNum = socket.id === room.p1 ? PA : (socket.id === room.p2 ? PB : null);
-        if (playerNum === null) return;
+    socket.on('action',(data)=>{
+        const{roomId,type,r,c,r2,c2,swap}=data;
+        const room=rooms[roomId];if(!room)return;
+        const st=room.state;
+        const pn=socket.id===room.p1?PA:(socket.id===room.p2?PB:null);
+        if(pn===null)return;
 
-        if (state.phase === 'PIE_PLACE' && playerNum === PA && type === 'place') {
-            if (!cellEmpty(state.board[r][c])) return;
-            const v = state.supplies[PA].shift();
-            state.board[r][c] = { owner: PA, stack: [v], faceUp: [false] };
-            state.piePos = { r, c };
-            state.phase = 'PIE_DECISION';
-            state.currentPlayer = PB;
-            state.gameLog.unshift(`P1 opening tile at (${r+1},${c+1})`);
-            if (state.isAiGame) {
-                state.gameLog.unshift('AI continues as Black.');
-                state.phase = 'PEEK';
-                state.currentPlayer = PB;
+        if(st.phase==='PIE_PLACE'&&pn===PA&&type==='place'){
+            if(!empty(st.board[r][c]))return;
+            const v=st.supplies[PA].shift();
+            st.board[r][c]={owner:PA,stack:[v],faceUp:[false]};
+            st.piePos={r,c};st.phase='PIE_DECISION';st.currentPlayer=PB;
+            st.gameLog.unshift(`P1 opening tile at (${r+1},${c+1})`);
+            if(st.isAiGame){
+                st.gameLog.unshift('AI continues as Black.');
+                st.phase='PEEK';st.currentPlayer=PB;
                 broadcastUpdate(room);
-                setTimeout(() => executeAiTurn(state, room), 600);
-            } else {
-                broadcastUpdate(room);
-            }
+                setTimeout(()=>executeAiTurn(st,room),600);
+            }else broadcastUpdate(room);
             return;
         }
 
-        if (state.phase === 'PIE_DECISION' && playerNum === PB && type === 'pieDecision') {
-            if (swap) {
-                [room.p1, room.p2] = [room.p2, room.p1];
-                state.metadata.p1_id = room.p1;
-                state.metadata.p2_id = room.p2;
-                state.currentPlayer = PB;
-                state.gameLog.unshift('P2 swapped.');
-                io.to(room.p1).emit('init', { player: PA, roomId });
-                io.to(room.p2).emit('init', { player: PB, roomId });
-            } else {
-                state.currentPlayer = PB;
-                state.gameLog.unshift('No swap. P2 plays next.');
-            }
-            state.phase = 'PEEK';
-            broadcastUpdate(room);
-            return;
+        if(st.phase==='PIE_DECISION'&&pn===PB&&type==='pieDecision'){
+            if(swap){[room.p1,room.p2]=[room.p2,room.p1];st.metadata.p1_id=room.p1;st.metadata.p2_id=room.p2;
+                st.currentPlayer=PB;st.gameLog.unshift('P2 swapped.');
+                io.to(room.p1).emit('init',{player:PA,roomId});io.to(room.p2).emit('init',{player:PB,roomId});
+            }else{st.currentPlayer=PB;st.gameLog.unshift('No swap. P2 plays next.');}
+            st.phase='PEEK';broadcastUpdate(room);return;
         }
 
-        if (state.phase === 'PEEK' && playerNum === state.currentPlayer) {
-            if (type === 'peek') {
-                const cell = state.board[r][c];
-                if (!cellEmpty(cell) && cell.owner === playerNum) {
-                    socket.emit('peekResult', { r, c, values: cell.stack });
-                    state.gameLog.unshift(`P${playerNum} peeks at (${r+1},${c+1})`);
-                }
+        if(st.phase==='PEEK'&&pn===st.currentPlayer){
+            if(type==='peek'){
+                const cl=st.board[r][c];
+                if(!empty(cl)&&cl.owner===pn)
+                    socket.emit('peekResult',{r,c,values:cl.stack});
             }
-            if (type === 'skipPeek' || type === 'peek') {
-                state.peekDone = true;
-                state.phase = 'ACTION';
-                broadcastUpdate(room);
-                return;
+            if(type==='skipPeek'||type==='peek'){
+                st.peekDone=true;st.phase='ACTION';broadcastUpdate(room);return;
             }
         }
 
-        if (state.phase === 'ACTION' && playerNum === state.currentPlayer) {
-            const supplyEmpty = state.supplies[playerNum].length === 0;
-
-            if (type === 'deploy' && !supplyEmpty) {
-                state.passesInRow = 0;
-                if (!actionDeploy(state, playerNum, r, c)) return;
-                advanceTurn(state); broadcastUpdate(room);
-                if (state.isAiGame && state.currentPlayer === PB && state.phase !== 'GAME_OVER')
-                    setTimeout(() => executeAiTurn(state, room), 600);
-                return;
-            }
-            if (type === 'reinforce' && !supplyEmpty) {
-                state.passesInRow = 0;
-                if (!actionReinforce(state, playerNum, r, c)) return;
-                advanceTurn(state); broadcastUpdate(room);
-                if (state.isAiGame && state.currentPlayer === PB && state.phase !== 'GAME_OVER')
-                    setTimeout(() => executeAiTurn(state, room), 600);
-                return;
-            }
-            if (type === 'strike') {
-                state.passesInRow = 0;
-                if (!actionStrike(state, playerNum, r, c, r2, c2)) return;
-                advanceTurn(state); broadcastUpdate(room);
-                if (state.isAiGame && state.currentPlayer === PB && state.phase !== 'GAME_OVER')
-                    setTimeout(() => executeAiTurn(state, room), 600);
-                return;
-            }
-            if (type === 'pass') {
-                if (!supplyEmpty) return;
-                if (legalStrikesExist(state.board, playerNum)) return;
-                actionPass(state, playerNum);
-                advanceTurn(state); broadcastUpdate(room);
-                if (state.isAiGame && state.currentPlayer === PB && state.phase !== 'GAME_OVER')
-                    setTimeout(() => executeAiTurn(state, room), 600);
-                return;
-            }
+        if(st.phase==='ACTION'&&pn===st.currentPlayer){
+            const se=st.supplies[pn].length===0;
+            if(type==='deploy'&&!se){st.passesInRow=0;if(!actionDeploy(st,pn,r,c))return;advanceTurn(st);broadcastUpdate(room);
+                if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>executeAiTurn(st,room),600);return;}
+            if(type==='reinforce'&&!se){st.passesInRow=0;if(!actionReinforce(st,pn,r,c))return;advanceTurn(st);broadcastUpdate(room);
+                if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>executeAiTurn(st,room),600);return;}
+            if(type==='strike'){st.passesInRow=0;if(!actionStrike(st,pn,r,c,r2,c2))return;advanceTurn(st);broadcastUpdate(room);
+                if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>executeAiTurn(st,room),600);return;}
+            if(type==='pass'){if(!se)return;if(legalStrikes(st.board,pn))return;actionPass(st,pn);advanceTurn(st);broadcastUpdate(room);
+                if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>executeAiTurn(st,room),600);return;}
         }
     });
 
-    socket.on('disconnect', () => {
-        for (const rid of Object.keys(rooms))
-            if (rid.startsWith('AI_') && rooms[rid].p1 === socket.id) delete rooms[rid];
-    });
+    socket.on('disconnect',()=>{for(const rid of Object.keys(rooms))if(rid.startsWith('AI_')&&rooms[rid].p1===socket.id)delete rooms[rid];});
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`RANKS v0.6.1 server on port ${PORT}`));
+const PORT=process.env.PORT||3000;
+server.listen(PORT,()=>console.log(`RANKS v0.6.2 on port ${PORT}`));
