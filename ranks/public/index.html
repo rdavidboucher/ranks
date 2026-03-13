@@ -42,7 +42,7 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 #waiting-msg{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:var(--ui);color:#555;padding:14px 28px;border-radius:40px;font-weight:700;z-index:200;box-shadow:var(--sh);}
 @keyframes shake{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}60%{transform:translate(-3px,3px)}80%{transform:translate(3px,-1px)}}
 @keyframes fadeOut{0%{opacity:1}100%{opacity:0}}
-.cap-anim{position:absolute;border-radius:8px;background:rgba(192,57,43,.3);border:3px solid var(--red);pointer-events:none;animation:shake .4s ease-out,fadeOut .6s .3s ease-out forwards;}
+.cap-anim{position:absolute;border-radius:50%;background:rgba(192,57,43,.3);border:3px solid var(--red);pointer-events:none;animation:shake .4s ease-out,fadeOut .6s .3s ease-out forwards;}
 @media(max-width:600px){.hud-s{font-size:.72rem;}.ab{padding:8px 16px;font-size:.78rem;}h1.title{letter-spacing:8px;}}
 </style>
 </head>
@@ -83,6 +83,7 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 <script>
 const socket=io(),cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let state=null,myP=0,roomId=null,pending=null,strikeTarget=null,strikeFrom=null;
+let lastCapStr = ''; // Tracker to prevent double animations
 const BS=7,CW=1020,MG=60,BPX=CW-MG*2,CL=BPX/BS,TS=CL*.72;
 function cX(c){return MG+c*CL+CL/2;}function cY(r){return MG+r*CL+CL/2;}
 function $(id){return document.getElementById(id);}
@@ -116,10 +117,20 @@ function sendPie(sw){socket.emit('action',{roomId,type:'pieDecision',swap:sw});}
 
 socket.on('init',d=>{myP=d.player;if(d.roomId)roomId=d.roomId;saveS();$('lobby-screen').classList.add('hidden');$('game-container').classList.remove('hidden');$('waiting-msg').classList.add('hidden');$('pid').innerText=myP===1?'White (P1)':'Black (P2)';draw();});
 socket.on('waiting',()=>{$('lobby-screen').classList.add('hidden');$('game-container').classList.remove('hidden');$('waiting-msg').classList.remove('hidden');});
+
 socket.on('update',s=>{
     state=s;pending=null;strikeTarget=null;strikeFrom=null;updateAll();
-    if(s.lastCaptures&&s.lastCaptures.length)animCaptures(s.lastCaptures);
+    
+    // Check if we already played this exact capture animation
+    const capStr = s.lastCaptures ? JSON.stringify(s.lastCaptures) : '';
+    if(s.lastCaptures && s.lastCaptures.length && capStr !== lastCapStr) {
+        animCaptures(s.lastCaptures);
+        lastCapStr = capStr; // Remember it so it won't repeat on next server broadcast
+    } else if (!s.lastCaptures || !s.lastCaptures.length) {
+        lastCapStr = '';
+    }
 });
+
 socket.on('roomFull',()=>{$('lobby-msg').innerText='Room full.';});
 socket.on('peekResult',d=>{showFlash(`PEEK (${d.r+1},${d.c+1}): ${d.values.join(', ')}`);});
 
@@ -151,6 +162,7 @@ function updateAll(){
     
     updND();updStatus();updBar();updLog();draw();phaseUI();
 }
+
 function updND(){
     const el=$('next-draw');
     if(!state||state.myNextDraw===null){
@@ -162,19 +174,19 @@ function updND(){
     if(ndcv){
         const nctx=ndcv.getContext('2d');
         const sz=52, cx=32, cy=32, val=state.myNextDraw, owner=myP;
-        const h=sz/2;
+        const r=sz/2;
         nctx.fillStyle=owner===1?'#fafafa':'#1a1a1a';
         nctx.shadowColor='rgba(0,0,0,.15)'; nctx.shadowBlur=6;
-        roundRect(nctx,cx-h,cy-h,sz,sz,6); nctx.fill(); nctx.shadowBlur=0;
+        nctx.beginPath(); nctx.arc(cx,cy,r,0,Math.PI*2); nctx.fill(); nctx.shadowBlur=0;
         
         if(owner===1){
             nctx.strokeStyle='#1a1a1a'; nctx.lineWidth=3.5; 
-            roundRect(nctx,cx-h,cy-h,sz,sz,6); nctx.stroke();
+            nctx.beginPath(); nctx.arc(cx,cy,r,0,Math.PI*2); nctx.stroke();
         }
         
         if(val>=1 && val<=6){
-            const pSz=sz*0.7; 
-            const pr=pSz*.08;
+            const pSz=sz*0.65; // Scaled specifically for round shape 
+            const pr=pSz*.09;
             nctx.fillStyle=owner===1?'#1a1a1a':'#fff';
             for(const[px,py]of PIPS[val]){
                 const x=cx-pSz/2+px*pSz, y=cy-pSz/2+py*pSz;
@@ -201,10 +213,9 @@ function updStatus(){if(!state)return;const el=$('status-msg'),me=state.currentP
 function updBar(){
     const bar=$('action-bar');bar.innerHTML='';if(!state)return;const me=state.currentPlayer===myP,p=state.phase;
     
-    // Pie Decision Buttons integrated right into the Action Bar
     if(p === 'PIE_DECISION' && me){
         mkBtn(bar, 'SWAP (TAKE WHITE)', 'ab go', () => sendPie(true));
-        mkBtn(bar, 'CONTINUE (STAY BLACK)', 'ab', () => sendPie(false));
+        mkBtn(bar, 'CONTINUE', 'ab', () => sendPie(false));
         return;
     }
 
@@ -286,7 +297,7 @@ function draw(){
     if(!state)return;
     for(let r=0;r<BS;r++)for(let c=0;c<BS;c++)drawCell(r,c,state.board[r][c]);
     
-    // Pending move preview
+    // Pending move preview (now round!)
     if(pending){
         const{r,c}=pending;
         ctx.save();
@@ -294,17 +305,18 @@ function draw(){
         
         if(pending.type==='deploy' || pending.type==='place'){
             ctx.globalAlpha=.4;
-            ctx.fillStyle=myP===1?'#f8f8f8':'#1a1a1a';roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.fill();
-            if(myP===1){ctx.strokeStyle='#1a1a1a';ctx.lineWidth=3;roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.stroke();}
+            ctx.fillStyle=myP===1?'#f8f8f8':'#1a1a1a';
+            ctx.beginPath();ctx.arc(cx,cy,TS/2,0,Math.PI*2);ctx.fill();
+            if(myP===1){ctx.strokeStyle='#1a1a1a';ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,TS/2,0,Math.PI*2);ctx.stroke();}
             
-            // Render Pips for preview
             if(state.myNextDraw){
                 ctx.globalAlpha=1.0;
-                drawPips(cx, cy, TS*0.7, state.myNextDraw, myP===1?'#1a1a1a':'#fff');
+                drawPips(cx, cy, TS*0.65, state.myNextDraw, myP===1?'#1a1a1a':'#fff');
             }
         }else if(pending.type==='reinforce' || pending.type==='peek_or_reinforce' || pending.type==='peek_only'){
             ctx.globalAlpha=.4;
-            ctx.strokeStyle='#3c78dc';ctx.lineWidth=4;roundRect(ctx,cx-TS/2-4,cy-TS/2-4,TS+8,TS+8,8);ctx.stroke();
+            ctx.strokeStyle='#3c78dc';ctx.lineWidth=4;
+            ctx.beginPath();ctx.arc(cx,cy,TS/2+4,0,Math.PI*2);ctx.stroke();
         }
         ctx.restore();
     }
@@ -318,7 +330,7 @@ function draw(){
 const var_red='#c0392b';
 
 function drawGrid(){
-    // Center 3x3 Kill Zone (Darker)
+    // Center 3x3 Kill Zone
     ctx.fillStyle = '#d6d1c8'; 
     ctx.fillRect(MG + 2*CL, MG + 2*CL, 3*CL, 3*CL);
     ctx.strokeStyle = '#c9a84c';
@@ -357,39 +369,44 @@ function drawCell(r,c,cell){
 
     const oppPeeked=state.oppPeeked||[];
     if(oppPeeked.includes(`${r},${c}`)){
-        ctx.fillStyle='rgba(160,80,200,.6)';ctx.beginPath();ctx.arc(cx+TS/2-6,cy-TS/2+6,4,0,Math.PI*2);ctx.fill();
+        // Pulled inward slightly to hug the curve of the circle
+        ctx.fillStyle='rgba(160,80,200,.6)';ctx.beginPath();ctx.arc(cx+TS/2-9,cy-TS/2+9,4,0,Math.PI*2);ctx.fill();
     }
 
     if(top.value!==null){
         if(isStk){
             const total=cell.tiles.reduce((s,t)=>s+(t.value||0),0);
-            if(total<=6){drawPips(cx,cy,TS*.7,total,top.owner===1?'#1a1a1a':'#fff');}
+            if(total<=6){drawPips(cx,cy,TS*.65,total,top.owner===1?'#1a1a1a':'#fff');}
             else{ctx.font=`900 ${Math.round(TS*.42)}px Helvetica Neue,Arial,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=top.owner===1?'#1a1a1a':'#fff';ctx.fillText(String(total),cx,cy);}
         }else{
-            drawPips(cx,cy,TS*.7,top.value,top.owner===1?'#1a1a1a':'#fff');
+            drawPips(cx,cy,TS*.65,top.value,top.owner===1?'#1a1a1a':'#fff');
         }
     }
     
-    if(isStk){ctx.fillStyle=var_gold;ctx.font=`800 ${Math.round(TS*.17)}px Helvetica Neue,Arial,sans-serif`;ctx.textAlign='right';ctx.textBaseline='top';ctx.fillText('\u00d72',cx+TS/2-2,cy-TS/2+2);}
-    if(top.faceUp){ctx.strokeStyle=var_gold;ctx.lineWidth=2.5;roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.stroke();}
-    if(strikeTarget&&strikeTarget.r===r&&strikeTarget.c===c){ctx.strokeStyle=var_red;ctx.lineWidth=3;roundRect(ctx,cx-TS/2-3,cy-TS/2-3,TS+6,TS+6,8);ctx.stroke();}
-    if(strikeFrom&&strikeFrom.r===r&&strikeFrom.c===c){ctx.strokeStyle='#27ae60';ctx.lineWidth=3;roundRect(ctx,cx-TS/2-3,cy-TS/2-3,TS+6,TS+6,8);ctx.stroke();}
+    if(isStk){ctx.fillStyle=var_gold;ctx.font=`800 ${Math.round(TS*.17)}px Helvetica Neue,Arial,sans-serif`;ctx.textAlign='right';ctx.textBaseline='top';ctx.fillText('\u00d72',cx+TS/2-5,cy-TS/2+5);}
+    
+    // Now all rings are round
+    if(top.faceUp){ctx.strokeStyle=var_gold;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(cx,cy,TS/2,0,Math.PI*2);ctx.stroke();}
+    if(strikeTarget&&strikeTarget.r===r&&strikeTarget.c===c){ctx.strokeStyle=var_red;ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,TS/2+3,0,Math.PI*2);ctx.stroke();}
+    if(strikeFrom&&strikeFrom.r===r&&strikeFrom.c===c){ctx.strokeStyle='#27ae60';ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,TS/2+3,0,Math.PI*2);ctx.stroke();}
 }
 const var_gold='#c9a84c';
 
+// Renders physical markers as round circles
 function drawTileShape(cx,cy,sz,owner){
-    const h=sz/2;
+    const r=sz/2;
     ctx.fillStyle=owner===1?'#fafafa':'#1a1a1a';
     ctx.shadowColor='rgba(0,0,0,.12)';ctx.shadowBlur=6;
-    roundRect(ctx,cx-h,cy-h,sz,sz,6);ctx.fill();ctx.shadowBlur=0;
-    if(owner===1){ctx.strokeStyle='#1a1a1a';ctx.lineWidth=3.5;roundRect(ctx,cx-h,cy-h,sz,sz,6);ctx.stroke();}
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    if(owner===1){ctx.strokeStyle='#1a1a1a';ctx.lineWidth=3.5;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();}
 }
 
 function drawLastMove(){if(!state||!state.lastMove)return;const{player:p,r,c}=state.lastMove,cx=cX(c),cy=cY(r);
     ctx.strokeStyle=p===1?'rgba(0,0,0,.65)':'rgba(255,255,255,.75)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(cx,cy,9,0,Math.PI*2);ctx.stroke();}
 
+// Scorched Earth / Ko marker is now round
 function drawKo(){if(!state)return;const ko=state.ko[myP];if(!ko)return;const cx=cX(ko.c),cy=cY(ko.r),h=CL/2-5;
-    ctx.strokeStyle='rgba(192,57,43,.6)';ctx.lineWidth=3;roundRect(ctx,cx-h,cy-h,h*2,h*2,8);ctx.stroke();}
+    ctx.strokeStyle='rgba(192,57,43,.6)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,h,0,Math.PI*2);ctx.stroke();}
 
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();}
 
