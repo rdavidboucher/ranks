@@ -209,11 +209,19 @@ function draw(){
 const var_red='#c0392b';
 
 function drawGrid(){
+    // Shade Center 3x3 (Rows 2-4, Cols 2-4)
+    ctx.fillStyle = 'rgba(201, 168, 76, 0.12)';
+    ctx.fillRect(MG + 2*CL, MG + 2*CL, 3*CL, 3*CL);
+    ctx.strokeStyle = 'rgba(201, 168, 76, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(MG + 2*CL, MG + 2*CL, 3*CL, 3*CL);
+
     // Thick grid lines
     ctx.strokeStyle='#b8b4ac';ctx.lineWidth=2;
     for(let i=0;i<=BS;i++){const x=MG+i*CL,y=MG+i*CL;
         ctx.beginPath();ctx.moveTo(x,MG);ctx.lineTo(x,MG+BS*CL);ctx.stroke();
         ctx.beginPath();ctx.moveTo(MG,y);ctx.lineTo(MG+BS*CL,y);ctx.stroke();}
+        
     if(!state||state.currentPlayer!==myP)return;
     const b=state.board;
     for(let r=0;r<BS;r++)for(let c=0;c<BS;c++){
