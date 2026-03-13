@@ -21,7 +21,6 @@ function emptyCells(b){const o=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(mt(
 function eAdj(b,p,r,c){const o=[];for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])&&b[rr][cc].owner!==p)o.push([rr,cc]);return o;}
 function hasStrikes(b,p){for(const[r,c]of occCells(b,p))if(eAdj(b,p,r,c).length>0)return true;return false;}
 
-// Best path qual score: max face-up score along any simple path through player's tiles
 function bestPathQual(b,p){
     const nodes=[];
     for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
@@ -44,7 +43,6 @@ function bestPathQual(b,p){
     return best;
 }
 
-// V0.6.3 Qualified Path check: length >= 7, score >= 21, touches center 3x3 (r:2-4, c:2-4)
 function checkQC(b,p){
     const nodes=[];
     for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
@@ -83,7 +81,6 @@ function checkVic(st,atk){
     return false;
 }
 
-// Total face-up score (all tiles on board) - used for end scoring
 function totalFU(b,p){let s=0;for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)s+=fuScore(cl);}return s;}
 
 function finalByPass(st){
@@ -111,7 +108,6 @@ function resolveStrike(st,p,aR,aC,tR,tC){
     else{capC(aR,aC);capC(tR,tC);st.gameLog.unshift(`  Tie: both captured`);}
     st.ko={[PA]:null,[PB]:null};for(const cs of cap)st.ko[cs.owner]={r:cs.r,c:cs.c};
     st.lastMove={player:p,r:aR,c:aC};
-    // Track captured cells for animation
     st.lastCaptures=cap.map(c=>({r:c.r,c:c.c,owner:c.owner}));
     const ext=checkExt(st);if(ext!==null){st.winner=ext===PA?PB:PA;st.winCondition='Extermination';st.phase='GAME_OVER';return;}
     checkVic(st,p);
@@ -129,8 +125,7 @@ function stateView(st,viewer){
         return{owner:cl.owner,height:ht(cl),
             tiles:cl.stack.map((v,i)=>({value:cl.faceUp[i]?v:null,faceUp:cl.faceUp[i],owner:cl.owner}))};
     }));
-    // Peeked cells: send as array of "r,c" strings for the viewer
-    const peekSet=st.peekedCells[viewer===PA?PB:PA];// opponent's peeked cells visible to us
+    const peekSet=st.peekedCells[viewer===PA?PB:PA];
     const oppPeeked=peekSet?[...peekSet]:[];
     return{board:bv,supplies:{[PA]:st.supplies[PA].length,[PB]:st.supplies[PB].length},
         myNextDraw:st.supplies[viewer]?.[0]??null,currentPlayer:st.currentPlayer,phase:st.phase,
@@ -142,26 +137,28 @@ function stateView(st,viewer){
     };
 }
 
-function bc(room){const st=room.state;if(room.p1&&room.p1!=='AI')io.to(room.p1).emit('update',stateView(st,PA));if(room.p2&&room.p2!=='AI')io.to(room.p2).emit('update',stateView(st,PB));}
+function bc(room){
+    const st=room.state;
+    if(room.p1 && room.p1!=='AI') io.to(room.p1).emit('update',stateView(st,PA));
+    if(room.p2 && room.p2!=='AI') io.to(room.p2).emit('update',stateView(st,PB));
+}
 
 // ═══ AI ═══
 function bfsR(b,p,starts){const seen=new Set(starts.map(([r,c])=>`${r},${c}`));const q=[...starts];while(q.length){const[r,c]=q.shift();for(const[rr,cc]of orth(r,c)){const k=`${rr},${cc}`;if(!seen.has(k)&&!mt(b[rr][cc])&&b[rr][cc].owner===p){seen.add(k);q.push([rr,cc]);}}}return seen;}
 function aiBestStr(b,p){const s=[];for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c))s.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:b[r][c].stack.reduce((a,v)=>a+v,0)});s.sort((a,b)=>b.score-a.score);return s[0]||{type:'pass'};}
 
-function aiMove(st){
-    const b=st.board,p=PB,e=PA,hasS=st.supplies[p].length>0;
+function aiMove(st, p){
+    const b=st.board, e = (p===PA) ? PB : PA, hasS=st.supplies[p].length>0;
     if(!hasS&&!hasStrikes(b,p))return{type:'pass'};
     if(!hasS)return aiBestStr(b,p);
     const fb=st.ko[p];
 
-    // Win/block checks
     for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:p,stack:[1],faceUp:[false]};if(checkQC(s,p))return{type:'deploy',r,c};}
     for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:e,stack:[1],faceUp:[false]};if(checkQC(s,e))return{type:'deploy',r,c};}
 
     const ownS=new Set(occCells(b,p).map(([r,c])=>`${r},${c}`));
     const moves=[];
 
-    // Deploy: Favor Center 3x3 and building non-branching lines
     for(const[r,c]of emptyCells(b)){
         if(fb&&fb.r===r&&fb.c===c)continue;
         let s=0;
@@ -169,66 +166,195 @@ function aiMove(st){
         if(isCenter) s+=20;
         else {
             const distToCenter = Math.max(0, Math.abs(r-3)-1, Math.abs(c-3)-1);
-            s += (3 - distToCenter) * 6; // Gravity towards the center
+            s += (3 - distToCenter) * 6;
         }
         
         let myAdj=0; for(const[rr,cc]of orth(r,c))if(ownS.has(`${rr},${cc}`))myAdj++;
-        if(myAdj===1) s+=18; // Perfect: extends a snake
-        if(myAdj>1) s+=6;  // Creates a branch (less ideal for snake, but blocks)
-        if(myAdj===0) s+=4;  // Isolated drop
+        if(myAdj===1) s+=18; 
+        if(myAdj>1) s+=6;  
+        if(myAdj===0) s+=4;  
         
         moves.push({type:'deploy',r,c,score:s});
     }
     
-    // Reinforce
     for(const[r,c]of occCells(b,p))if(ht(b[r][c])===1){let s=eAdj(b,p,r,c).length*18-4;moves.push({type:'reinforce',r,c,score:s});}
     
-    // Strike
     for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c)){
         let aS=b[r][c].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])&&b[rr][cc].owner===p)aS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
         let dS=b[tr][tc].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(tr,tc))if(!mt(b[rr][cc])&&b[rr][cc].owner!==p)dS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
         let s=aS>dS?(aS-dS)*3+8:-(dS-aS)*4;
-        if(tr>=2&&tr<=4&&tc>=2&&tc<=4) s+=12; // High priority to fight over the center
+        if(tr>=2&&tr<=4&&tc>=2&&tc<=4) s+=12; 
         moves.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:s});
     }
     
     if(!moves.length)return{type:'pass'};
     moves.sort((a,b)=>b.score-a.score);
     
-    // Add a tiny bit of variance so AI doesn't get stuck in loops
     const best = moves[0].score;
     const topMoves = moves.filter(m => m.score >= best - 2);
     return topMoves[Math.floor(Math.random()*topMoves.length)];
 }
 
+function checkAiTurn(st, room) {
+    if(!st.isAiGame || st.phase === 'GAME_OVER') return;
+    const aiPlayer = room.p1 === 'AI' ? PA : PB;
+    if(st.currentPlayer === aiPlayer) setTimeout(()=>execAI(st,room), 600);
+}
+
 function execAI(st,room){
-    if(st.currentPlayer!==PB||!st.isAiGame||st.phase==='GAME_OVER')return;
-    if(st.phase==='PEEK')st.phase='ACTION';
-    const mv=aiMove(st);
-    if(mv.type==='deploy'){st.passesInRow=0;actDeploy(st,PB,mv.r,mv.c);}
-    else if(mv.type==='reinforce'){st.passesInRow=0;actReinforce(st,PB,mv.r,mv.c);}
-    else if(mv.type==='strike'){st.passesInRow=0;actStrike(st,PB,mv.atkR,mv.atkC,mv.tgtR,mv.tgtC);}
-    else actPass(st,PB);
-    if(st.phase!=='GAME_OVER')advTurn(st);bc(room);
+    const aiPlayer = room.p1 === 'AI' ? PA : PB;
+    if(st.currentPlayer !== aiPlayer || !st.isAiGame || st.phase === 'GAME_OVER') return;
+    if(st.phase === 'PEEK') st.phase = 'ACTION';
+    
+    const mv = aiMove(st, aiPlayer);
+    if(mv.type === 'deploy'){ st.passesInRow=0; actDeploy(st, aiPlayer, mv.r, mv.c); }
+    else if(mv.type === 'reinforce'){ st.passesInRow=0; actReinforce(st, aiPlayer, mv.r, mv.c); }
+    else if(mv.type === 'strike'){ st.passesInRow=0; actStrike(st, aiPlayer, mv.atkR, mv.atkC, mv.tgtR, mv.tgtC); }
+    else actPass(st, aiPlayer);
+    
+    if(st.phase !== 'GAME_OVER') advTurn(st);
+    bc(room);
+    checkAiTurn(st, room);
 }
 
 const rooms={};
 io.on('connection',(socket)=>{
-    socket.on('joinGame',(irid)=>{let rid=String(irid).toUpperCase().trim();const ai=rid==='PLAYAI';if(ai)rid=`AI_${socket.id}`;
-        if(!rooms[rid]){const st=mkState(rid);st.isAiGame=ai;st.metadata.p1_id=socket.id;st.metadata.p2_id=ai?'AI':null;rooms[rid]={state:st,p1:socket.id,p2:ai?'AI':null};socket.join(rid);socket.emit('init',{player:PA,roomId:rid});if(ai)socket.emit('update',stateView(st,PA));else socket.emit('waiting');}
-        else if(rooms[rid].p2===null){rooms[rid].p2=socket.id;rooms[rid].state.metadata.p2_id=socket.id;socket.join(rid);socket.emit('init',{player:PB,roomId:rid});io.to(rooms[rid].p1).emit('init',{player:PA,roomId:rid});bc(rooms[rid]);}
-        else socket.emit('roomFull');});
-    socket.on('rejoinGame',({roomId:rid,player:pl})=>{const room=rooms[rid];if(!room){socket.emit('rejoinFailed','Not found');return;}if(room.state.phase==='GAME_OVER'){socket.emit('rejoinFailed','Over');return;}if(pl===PA){room.p1=socket.id;room.state.metadata.p1_id=socket.id;}else if(pl===PB&&room.p2!=='AI'){room.p2=socket.id;room.state.metadata.p2_id=socket.id;}else{socket.emit('rejoinFailed','Invalid');return;}socket.join(rid);socket.emit('init',{player:pl,roomId:rid});socket.emit('update',stateView(room.state,pl));});
-    socket.on('action',(data)=>{const{roomId:rid,type,r,c,r2,c2,swap}=data;const room=rooms[rid];if(!room)return;const st=room.state;const pn=socket.id===room.p1?PA:(socket.id===room.p2?PB:null);if(pn===null)return;
-        if(st.phase==='PIE_PLACE'&&pn===PA&&type==='place'){if(!mt(st.board[r][c]))return;const v=st.supplies[PA].shift();st.board[r][c]={owner:PA,stack:[v],faceUp:[false]};st.piePos={r,c};st.phase='PIE_DECISION';st.currentPlayer=PB;st.gameLog.unshift(`P1 opening at (${r+1},${c+1})`);if(st.isAiGame){st.gameLog.unshift('AI continues as Black.');st.phase='PEEK';st.currentPlayer=PB;bc(room);setTimeout(()=>execAI(st,room),600);}else bc(room);return;}
-        if(st.phase==='PIE_DECISION'&&pn===PB&&type==='pieDecision'){if(swap){[room.p1,room.p2]=[room.p2,room.p1];st.metadata.p1_id=room.p1;st.metadata.p2_id=room.p2;st.currentPlayer=PB;st.gameLog.unshift('P2 swapped.');io.to(room.p1).emit('init',{player:PA,roomId:rid});io.to(room.p2).emit('init',{player:PB,roomId:rid});}else{st.currentPlayer=PB;st.gameLog.unshift('No swap.');}st.phase='PEEK';bc(room);return;}
-        if(st.phase==='PEEK'&&pn===st.currentPlayer){if(type==='peek'){const cl=st.board[r][c];if(!mt(cl)&&cl.owner===pn){socket.emit('peekResult',{r,c,values:cl.stack});st.peekedCells[pn].add(`${r},${c}`);st.gameLog.unshift(`P${pn} peeks at (${r+1},${c+1})`);}}if(type==='skipPeek'||type==='peek'){st.peekDone=true;st.phase='ACTION';bc(room);return;}}
-        if(st.phase==='ACTION'&&pn===st.currentPlayer){const se=st.supplies[pn].length===0;
-            if(type==='deploy'&&!se){st.passesInRow=0;if(!actDeploy(st,pn,r,c))return;advTurn(st);bc(room);if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>execAI(st,room),600);return;}
-            if(type==='reinforce'&&!se){st.passesInRow=0;if(!actReinforce(st,pn,r,c))return;advTurn(st);bc(room);if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>execAI(st,room),600);return;}
-            if(type==='strike'){st.passesInRow=0;if(!actStrike(st,pn,r,c,r2,c2))return;advTurn(st);bc(room);if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>execAI(st,room),600);return;}
-            if(type==='pass'){if(!se)return;if(hasStrikes(st.board,pn))return;actPass(st,pn);advTurn(st);bc(room);if(st.isAiGame&&st.currentPlayer===PB&&st.phase!=='GAME_OVER')setTimeout(()=>execAI(st,room),600);return;}}});
-    socket.on('disconnect',()=>{for(const rid of Object.keys(rooms))if(rid.startsWith('AI_')&&rooms[rid].p1===socket.id)delete rooms[rid];});
+    socket.on('joinGame',(irid)=>{
+        let rid=String(irid).toUpperCase().trim();
+        const ai=rid==='PLAYAI';
+        if(ai) rid=`AI_${socket.id}`;
+        
+        if(!rooms[rid]){
+            const st=mkState(rid); st.isAiGame=ai;
+            
+            // Randomize White and Black
+            const hostPlaysWhite = Math.random() < 0.5;
+            const wSock = hostPlaysWhite ? socket.id : (ai ? 'AI' : null);
+            const bSock = hostPlaysWhite ? (ai ? 'AI' : null) : socket.id;
+            
+            st.metadata.p1_id = wSock;
+            st.metadata.p2_id = bSock;
+            rooms[rid] = { state: st, p1: wSock, p2: bSock };
+            
+            socket.join(rid);
+            socket.emit('init', {player: hostPlaysWhite ? PA : PB, roomId: rid});
+            
+            if(ai) {
+                if(!hostPlaysWhite) {
+                    // AI is White, AI plays first opening tile
+                    const ctrs = [[3,3], [2,3], [3,2], [4,3], [3,4], [2,2], [4,4]];
+                    const [rr, cc] = ctrs[Math.floor(Math.random()*ctrs.length)];
+                    const v = st.supplies[PA].shift();
+                    st.board[rr][cc] = {owner: PA, stack: [v], faceUp: [false]};
+                    st.piePos = {r: rr, c: cc};
+                    st.phase = 'PIE_DECISION';
+                    st.currentPlayer = PB; 
+                    st.gameLog.unshift(`White (AI) placed opening at (${rr+1},${cc+1})`);
+                }
+                socket.emit('update', stateView(st, hostPlaysWhite ? PA : PB));
+            } else {
+                socket.emit('waiting');
+            }
+        }
+        else if(rooms[rid].p1 === null || rooms[rid].p2 === null){
+            const joiningAsWhite = rooms[rid].p1 === null;
+            if(joiningAsWhite){
+                rooms[rid].p1 = socket.id;
+                rooms[rid].state.metadata.p1_id = socket.id;
+            } else {
+                rooms[rid].p2 = socket.id;
+                rooms[rid].state.metadata.p2_id = socket.id;
+            }
+            const pRole = joiningAsWhite ? PA : PB;
+            socket.join(rid);
+            socket.emit('init', {player: pRole, roomId: rid});
+            io.to(rooms[rid].p1).emit('init', {player: PA, roomId: rid});
+            io.to(rooms[rid].p2).emit('init', {player: PB, roomId: rid});
+            bc(rooms[rid]);
+        }
+        else socket.emit('roomFull');
+    });
+    
+    socket.on('rejoinGame',({roomId:rid,player:pl})=>{
+        const room=rooms[rid];
+        if(!room){socket.emit('rejoinFailed','Not found');return;}
+        if(room.state.phase==='GAME_OVER'){socket.emit('rejoinFailed','Over');return;}
+        
+        if(pl===PA){room.p1=socket.id;room.state.metadata.p1_id=socket.id;}
+        else if(pl===PB&&room.p2!=='AI'){room.p2=socket.id;room.state.metadata.p2_id=socket.id;}
+        else{socket.emit('rejoinFailed','Invalid');return;}
+        
+        socket.join(rid);
+        socket.emit('init',{player:pl,roomId:rid});
+        socket.emit('update',stateView(room.state,pl));
+    });
+    
+    socket.on('action',(data)=>{
+        const{roomId:rid,type,r,c,r2,c2,swap}=data;const room=rooms[rid];if(!room)return;
+        const st=room.state;
+        const pn=socket.id===room.p1?PA:(socket.id===room.p2?PB:null);if(pn===null)return;
+        
+        if(st.phase==='PIE_PLACE'&&pn===PA&&type==='place'){
+            if(!mt(st.board[r][c]))return;
+            const v=st.supplies[PA].shift();
+            st.board[r][c]={owner:PA,stack:[v],faceUp:[false]};
+            st.piePos={r,c};
+            st.phase='PIE_DECISION';
+            st.currentPlayer=PB;
+            st.gameLog.unshift(`P1 opening at (${r+1},${c+1})`);
+            bc(room);
+            checkAiTurn(st, room);
+            return;
+        }
+        
+        if(st.phase==='PIE_DECISION'&&pn===PB&&type==='pieDecision'){
+            if(swap){
+                [room.p1,room.p2]=[room.p2,room.p1];
+                st.metadata.p1_id=room.p1;
+                st.metadata.p2_id=room.p2;
+                st.currentPlayer=PB;
+                st.gameLog.unshift('P2 swapped.');
+                io.to(room.p1).emit('init',{player:PA,roomId:rid});
+                io.to(room.p2).emit('init',{player:PB,roomId:rid});
+            }else{
+                st.currentPlayer=PB;
+                st.gameLog.unshift('No swap.');
+            }
+            st.phase='PEEK';
+            bc(room);
+            checkAiTurn(st, room);
+            return;
+        }
+        
+        if(st.phase==='PEEK'&&pn===st.currentPlayer){
+            if(type==='peek'){
+                const cl=st.board[r][c];
+                if(!mt(cl)&&cl.owner===pn){
+                    socket.emit('peekResult',{r,c,values:cl.stack});
+                    st.peekedCells[pn].add(`${r},${c}`);
+                    st.gameLog.unshift(`P${pn} peeks at (${r+1},${c+1})`);
+                }
+            }
+            if(type==='skipPeek'||type==='peek'){
+                st.peekDone=true;
+                st.phase='ACTION';
+                bc(room);
+                return;
+            }
+        }
+        
+        if(st.phase==='ACTION'&&pn===st.currentPlayer){
+            const se=st.supplies[pn].length===0;
+            if(type==='deploy'&&!se){st.passesInRow=0;if(!actDeploy(st,pn,r,c))return;advTurn(st);bc(room);checkAiTurn(st,room);return;}
+            if(type==='reinforce'&&!se){st.passesInRow=0;if(!actReinforce(st,pn,r,c))return;advTurn(st);bc(room);checkAiTurn(st,room);return;}
+            if(type==='strike'){st.passesInRow=0;if(!actStrike(st,pn,r,c,r2,c2))return;advTurn(st);bc(room);checkAiTurn(st,room);return;}
+            if(type==='pass'){if(!se)return;if(hasStrikes(st.board,pn))return;actPass(st,pn);advTurn(st);bc(room);checkAiTurn(st,room);return;}
+        }
+    });
+    
+    socket.on('disconnect',()=>{
+        for(const rid of Object.keys(rooms))if(rid.startsWith('AI_')&&(rooms[rid].p1===socket.id||rooms[rid].p2===socket.id))delete rooms[rid];
+    });
 });
 
 server.listen(process.env.PORT||3000,()=>console.log(`RANKS v0.6.3 on port ${process.env.PORT||3000}`));
