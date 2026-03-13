@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RANKS v0.6.2 — Rules</title>
+    <title>RANKS v0.6.3 — Rules</title>
     <style>
         :root{--gold:#d4af37;--blk:#111;--wht:#f4f4f4;--grey:#333;}
         body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:var(--wht);color:var(--blk);line-height:1.65;margin:0;padding:0;}
@@ -25,13 +25,13 @@
 <body>
 <header>
     <h1>RANKS</h1>
-    <p>Version 0.6.2 (Alpha) &mdash; Official Rules</p>
+    <p>Version 0.6.3 (Alpha) &mdash; Official Rules</p>
 </header>
 <main>
 <a href="/" class="back-link">&larr; BACK TO GAME</a>
 
 <h2>I. Overview</h2>
-<p>RANKS is a 2-player abstract strategy game of hidden information, spatial control, and combat. The core tension is <strong>commitment under uncertainty</strong>. Players build sprawling networks to connect opposite sides of a claustrophobic board while navigating brutal, localized skirmishes that force them to reveal their hidden strengths.</p>
+<p>RANKS is a 2-player abstract strategy game of hidden information, spatial control, and combat. The core tension is <strong>commitment under uncertainty</strong>. Players build fragile networks of hidden and revealed strength while navigating brutal, localized skirmishes that force them to expose their weakest points.</p>
 
 <h2>II. Components &amp; Setup</h2>
 <p><strong>Board:</strong> One 7&times;7 grid board.</p>
@@ -69,67 +69,81 @@
 
 <h3>3. Strike (Attack)</h3>
 <p>When you Strike, choose:</p>
-<ol type="a">
+<ul>
     <li>One of your occupied cells as the <strong>attacker</strong>, and</li>
     <li>One orthogonally adjacent enemy-occupied cell as the <strong>target</strong>.</li>
-</ol>
+</ul>
 <p>The striking tile must be flipped face-up to declare the attack. (If initiating a Strike with a stack, flip only the top tile face-up first to declare the attack.)</p>
 
 <h2>VI. Combat Resolution</h2>
-<p>Combat resolves immediately and exactly once per Strike action (no cascading captures).</p>
-<p><strong>Captured tiles</strong> are permanently removed from the game and placed face-up in a shared, public <strong>Graveyard</strong>. Players may inspect the Graveyard at any time.</p>
+<p>Combat resolves immediately and exactly once per Strike action. There are no cascading captures.</p>
+<p><strong>Captured tiles</strong> are permanently removed from the game and placed face-up in a shared, public <strong>Graveyard</strong>. Players may inspect the Graveyard at any time to count remaining tile values.</p>
 
 <h3>Step 1 &mdash; Identify Clusters</h3>
-<p><strong>Attacking Cluster:</strong> The striking cell (the Spearhead) plus any friendly cells directly orthogonally adjacent to it (distance 1).</p>
-<p><strong>Defending Cluster:</strong> The targeted cell (the Spearhead) plus any enemy cells directly orthogonally adjacent to it (distance 1).</p>
-<p class="highlight">Diagonal connections and cells beyond distance 1 are completely ignored.</p>
+<p>Identify the specific cells involved in the skirmish. A cell contains either a single tile or a stack; either way, it acts as one unified target/supporter. A tile provides support if it is orthogonally adjacent to the spearhead’s cell.</p>
+<ul>
+    <li><strong>Attacking Cluster:</strong> The striking cell (the Spearhead) plus any friendly cells directly orthogonally adjacent to it (distance 1).</li>
+    <li><strong>Defending Cluster:</strong> The targeted cell (the Spearhead) plus any enemy cells directly orthogonally adjacent to it (distance 1).</li>
+</ul>
+<p class="highlight">Diagonal connections and cells beyond distance 1 are ignored.</p>
 
 <h3>Step 2 &mdash; Reveal</h3>
-<p>All tiles in both clusters are immediately flipped face-up. (When a stack is revealed, reveal both tiles.) They remain face-up for the rest of the game.</p>
+<p>All tiles in both clusters are immediately flipped face-up. If a stack is revealed, reveal both tiles. They remain face-up for the rest of the game.</p>
 
 <h3>Step 3 &mdash; Sum</h3>
-<p>Calculate the total dot value of each cluster. If a stack is involved, both tiles in that stack contribute their values.</p>
+<p>Calculate the total dot value of each cluster. If a stack is involved, both tiles in that stack contribute their values to the sum.</p>
 
 <h3>Step 4 &mdash; Resolve Casualties &amp; Routs</h3>
 <ul>
-    <li><strong>Clear Winner:</strong> The cluster with the lower total sum loses. The losing Spearhead is Captured. If the losing Spearhead is a stack, BOTH tiles are Captured.</li>
-    <li>All other tiles in the losing cluster are <strong>Routed</strong>: they remain on the board permanently face-up but are otherwise unharmed.</li>
-    <li><strong>Tie:</strong> Both Spearheads are Captured. All other tiles in both clusters are Routed.</li>
+    <li><strong>Clear Winner:</strong> The cluster with the lower total sum loses. 
+        <ul>
+            <li>The losing Spearhead is Captured and sent to the Graveyard.</li>
+            <li><strong>Stack Casualties:</strong> If the losing Spearhead is a stack, both tiles are Captured and the cell becomes empty.</li>
+            <li>All other tiles in the losing cluster are <strong>Routed</strong>: they remain on the board permanently face-up but are otherwise unharmed.</li>
+        </ul>
+    </li>
+    <li><strong>Tie:</strong> Both Spearheads are Captured. If a Spearhead is a stack, both tiles are Captured. All other tiles in both clusters are Routed.</li>
 </ul>
 
 <h3>Step 5 &mdash; Check Victory</h3>
-<p>After combat fully resolves, instantly check for Sudden Death conditions.</p>
+<p>After combat fully resolves and captured pieces are removed, instantly check for Sudden Death conditions.</p>
 
 <h2>VII. Winning the Game</h2>
 
-<h3>1. Sudden Death &mdash; Qualifying Connection</h3>
-<p>After any action (including after combat resolves), if a player has an unbroken orthogonal chain of friendly tiles touching both <strong>Row 1 and Row 7</strong>, or both <strong>Column 1 and Column 7</strong>, that player wins immediately <em>only if the chain is Qualified</em>.</p>
+<h3>1. Sudden Death &mdash; Valuable Path</h3>
+<p>After any action, if a player has a Qualified Path, that player wins immediately.</p>
+<p><strong>Definition — Path:</strong> A path is a single simple orthogonal path through your tiles, without branching and without revisiting any cell.</p>
 
 <div class="highlight">
-    <p><strong>Qualified Chain Requirement (The Threshold):</strong></p>
-    <p>Compute the chain&rsquo;s Qualification Score: the sum of dot values of all face-up tiles in that chain. Face-down tiles maintain physical connection but contribute 0. If a stack is in the chain, only face-up tiles in that stack count.</p>
-    <p><strong>Win Condition:</strong> The chain is Qualified if its Qualification Score is <strong>21 or greater</strong>.</p>
+    <p><strong>Qualified Path Requirement:</strong></p>
+    <p>To qualify, a path must satisfy all three conditions:</p>
+    <ul>
+        <li><strong>Minimum Length:</strong> The path must contain at least 7 cells.</li>
+        <li><strong>The Anchor:</strong> The path must include at least one cell in the center 3&times;3 region.</li>
+        <li><strong>Value Threshold:</strong> The path’s Qualification Score must be <strong>21 or greater</strong>.</li>
+    </ul>
+    <p><strong>Qualification Score:</strong> The sum of the dot values of all face-up tiles on cells in that specific path. Face-down tiles in the path maintain physical connection but contribute 0. If a cell contains a stack, include the dot values of only the face-up tiles in that stack.</p>
 </div>
 
-<p><strong>Simultaneous Qualification:</strong> If a single combat resolution results in both players forming a Qualified chain simultaneously, the active player (the attacker) wins.</p>
-<p>Routed tiles (face-up) count as normal nodes in a chain and contribute their dot values normally.</p>
+<p><strong>Choosing a Path:</strong> If you have multiple qualifying paths, you may choose any one of them.</p>
+<p><strong>Simultaneous Qualification:</strong> If a single combat resolution results in both players forming a Qualified Path simultaneously, the active player (the attacker) wins.</p>
+<p>Routed tiles count as normal nodes in a path and contribute their dot values normally if face-up.</p>
 
 <h3>2. Sudden Death &mdash; Extermination</h3>
-<p>If a player has zero tiles on the board and zero tiles in their Supply, they lose immediately. Checked after each combat resolution.</p>
+<p>If a player has zero tiles on the board and zero tiles in their Supply, they lose immediately. This is checked after each combat resolution.</p>
 
 <h3>3. Mutual Attrition &mdash; Scoring</h3>
-<p>If the game ends by two consecutive passes:</p>
+<p>If the game ends by two consecutive passes, players calculate their final score:</p>
 <ul>
-    <li>Simply sum the dot values of all of your <strong>face-up tiles</strong> currently on the board. (Face-down tiles count as 0.)</li>
-    <li>The highest total score wins.</li>
-    <li>If tied, the player with the most physical tiles remaining on the board wins.</li>
-    <li>If still tied, the game is a draw.</li>
+    <li>Sum the dot values of all of your <strong>face-up tiles</strong> currently on the board.</li>
+    <li>Face-down tiles count as 0.</li>
 </ul>
+<p>The player with the higher total wins. If tied, the player with the most physical tiles remaining on the board wins. If still tied, the game is a draw.</p>
 
 <h2>VIII. Final Clarifications</h2>
 <ul>
-    <li><strong>Routed Tiles:</strong> Function exactly like normal tiles. They can Strike, provide Support, and be Reinforced. They can never be turned face-down again.</li>
-    <li><strong>Stacks:</strong> Count as a single spatial node in a chain for connection purposes.</li>
+    <li><strong>Routed Tiles:</strong> Function exactly like normal tiles. They can declare a Strike, provide Support, and be Reinforced. However, they can never be turned face-down again.</li>
+    <li><strong>Stacks:</strong> Stacks count as a single spatial node for path purposes.</li>
     <li><strong>Peeking:</strong> A player may look at their own face-down tiles in their Supply at any time.</li>
 </ul>
 

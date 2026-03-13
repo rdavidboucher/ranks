@@ -23,41 +23,63 @@ function hasStrikes(b,p){for(const[r,c]of occCells(b,p))if(eAdj(b,p,r,c).length>
 
 // Best path qual score: max face-up score along any simple path through player's tiles
 function bestPathQual(b,p){
-    const nodes=new Map();
-    for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.set(`${r},${c}`,fuScore(cl));}
-    if(!nodes.size)return 0;
-    const adj={};for(const k of nodes.keys()){const[r,c]=k.split(',').map(Number);adj[k]=[];for(const[rr,cc]of orth(r,c)){const nk=`${rr},${cc}`;if(nodes.has(nk))adj[k].push(nk);}}
+    const nodes=[];
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
+    if(!nodes.length)return 0;
     let best=0,it=0;
-    for(const sk of nodes.keys()){
-        const stk=[{c:sk,seen:new Set([sk]),sc:nodes.get(sk)}];
-        while(stk.length){if(++it>500000)return best;const{c:cur,seen,sc}=stk.pop();
-            if(sc>best)best=sc;
-            for(const nx of(adj[cur]||[]))if(!seen.has(nx)){const ns=new Set(seen);ns.add(nx);stk.push({c:nx,seen:ns,sc:sc+nodes.get(nx)});}}
+    const vis=Array(N).fill(0).map(()=>Array(N).fill(false));
+    function dfs(r,c,sc){
+        if(++it>500000)return;
+        if(sc>best)best=sc;
+        for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){
+            const nr=r+dr,nc=c+dc;
+            if(inB(nr,nc)&&!vis[nr][nc]&&!mt(b[nr][nc])&&b[nr][nc].owner===p){
+                vis[nr][nc]=true;
+                dfs(nr,nc,sc+fuScore(b[nr][nc]));
+                vis[nr][nc]=false;
+            }
+        }
     }
+    for(const n of nodes){vis[n.r][n.c]=true;dfs(n.r,n.c,n.sc);vis[n.r][n.c]=false;}
     return best;
 }
 
-// Qualified connection check (path from edge to edge with score >= QUAL)
+// V0.6.3 Qualified Path check: length >= 7, score >= 21, touches center 3x3 (r:2-4, c:2-4)
 function checkQC(b,p){
-    const nodes=new Map();
-    for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.set(`${r},${c}`,fuScore(cl));}
-    if(!nodes.size)return false;
-    const adj={};for(const k of nodes.keys()){const[r,c]=k.split(',').map(Number);adj[k]=[];for(const[rr,cc]of orth(r,c)){const nk=`${rr},${cc}`;if(nodes.has(nk))adj[k].push(nk);}}
-    let it=0;
-    function dfs(starts,goal){for(const s of starts){const stk=[{c:s,seen:new Set([s]),sc:nodes.get(s)}];while(stk.length){if(++it>500000)return false;const{c:cur,seen,sc}=stk.pop();if(goal(cur)&&sc>=QUAL)return true;for(const nx of(adj[cur]||[]))if(!seen.has(nx)){const ns=new Set(seen);ns.add(nx);stk.push({c:nx,seen:ns,sc:sc+nodes.get(nx)});}}}return false;}
-    const rs=[];for(let c=0;c<N;c++)if(nodes.has(`0,${c}`))rs.push(`0,${c}`);
-    if(rs.length&&dfs(rs,k=>k.split(',')[0]===String(N-1)))return true;
-    const cs=[];for(let r=0;r<N;r++)if(nodes.has(`${r},0`))cs.push(`${r},0`);
-    if(cs.length&&dfs(cs,k=>k.split(',')[1]===String(N-1)))return true;
+    const nodes=[];
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
+    if(nodes.length<7)return false;
+    let found=false,it=0;
+    const vis=Array(N).fill(0).map(()=>Array(N).fill(false));
+    function dfs(r,c,len,sc,hasCtr){
+        if(found||++it>500000)return;
+        if(len>=7&&sc>=QUAL&&hasCtr){found=true;return;}
+        for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){
+            const nr=r+dr,nc=c+dc;
+            if(inB(nr,nc)&&!vis[nr][nc]&&!mt(b[nr][nc])&&b[nr][nc].owner===p){
+                vis[nr][nc]=true;
+                const cCtr=hasCtr||(nr>=2&&nr<=4&&nc>=2&&nc<=4);
+                dfs(nr,nc,len+1,sc+fuScore(b[nr][nc]),cCtr);
+                vis[nr][nc]=false;
+            }
+        }
+    }
+    for(const n of nodes){
+        vis[n.r][n.c]=true;
+        const cCtr=(n.r>=2&&n.r<=4&&n.c>=2&&n.c<=4);
+        dfs(n.r,n.c,1,n.sc,cCtr);
+        vis[n.r][n.c]=false;
+        if(found)return true;
+    }
     return false;
 }
 
 function checkExt(st){for(const p of[PA,PB])if(occCells(st.board,p).length===0&&st.supplies[p].length===0)return p;return null;}
 function checkVic(st,atk){
     const c1=checkQC(st.board,PA),c2=checkQC(st.board,PB);
-    if(c1&&c2){st.winner=atk||st.currentPlayer;st.winCondition='Qualified Connection (simultaneous)';st.phase='GAME_OVER';return true;}
-    if(c1){st.winner=PA;st.winCondition='Qualified Connection';st.phase='GAME_OVER';return true;}
-    if(c2){st.winner=PB;st.winCondition='Qualified Connection';st.phase='GAME_OVER';return true;}
+    if(c1&&c2){st.winner=atk||st.currentPlayer;st.winCondition='Qualified Path (simultaneous)';st.phase='GAME_OVER';return true;}
+    if(c1){st.winner=PA;st.winCondition='Qualified Path';st.phase='GAME_OVER';return true;}
+    if(c2){st.winner=PB;st.winCondition='Qualified Path';st.phase='GAME_OVER';return true;}
     return false;
 }
 
@@ -124,77 +146,60 @@ function bc(room){const st=room.state;if(room.p1&&room.p1!=='AI')io.to(room.p1).
 
 // ═══ AI ═══
 function bfsR(b,p,starts){const seen=new Set(starts.map(([r,c])=>`${r},${c}`));const q=[...starts];while(q.length){const[r,c]=q.shift();for(const[rr,cc]of orth(r,c)){const k=`${rr},${cc}`;if(!seen.has(k)&&!mt(b[rr][cc])&&b[rr][cc].owner===p){seen.add(k);q.push([rr,cc]);}}}return seen;}
-
-function aiAxis(b,p){
-    let bestA='row',bestP=-1,bestGap=N;
-    // Row: top->bottom
-    const top=[];for(let c=0;c<N;c++)if(!mt(b[0][c])&&b[0][c].owner===p)top.push([0,c]);
-    if(top.length){const r=bfsR(b,p,top);let mx=0;for(const k of r)mx=Math.max(mx,parseInt(k));if(mx>=bestP){bestP=mx;bestA='row';bestGap=N-1-mx;}}
-    // Row: bottom->top
-    const bot=[];for(let c=0;c<N;c++)if(!mt(b[N-1][c])&&b[N-1][c].owner===p)bot.push([N-1,c]);
-    if(bot.length){const r=bfsR(b,p,bot);let mn=N-1;for(const k of r)mn=Math.min(mn,parseInt(k));const prog=N-1-mn;if(prog>bestP){bestP=prog;bestA='row';bestGap=mn;}}
-    // Col: left->right
-    const left=[];for(let r=0;r<N;r++)if(!mt(b[r][0])&&b[r][0].owner===p)left.push([r,0]);
-    if(left.length){const r=bfsR(b,p,left);let mx=0;for(const k of r)mx=Math.max(mx,parseInt(k.split(',')[1]));if(mx>bestP){bestP=mx;bestA='col';bestGap=N-1-mx;}}
-    // Col: right->left
-    const right=[];for(let r=0;r<N;r++)if(!mt(b[r][N-1])&&b[r][N-1].owner===p)right.push([r,N-1]);
-    if(right.length){const r=bfsR(b,p,right);let mn=N-1;for(const k of r)mn=Math.min(mn,parseInt(k.split(',')[1]));const prog=N-1-mn;if(prog>bestP){bestP=prog;bestA='col';bestGap=mn;}}
-    return{axis:bestA,progress:bestP,gap:bestGap};
-}
+function aiBestStr(b,p){const s=[];for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c))s.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:b[r][c].stack.reduce((a,v)=>a+v,0)});s.sort((a,b)=>b.score-a.score);return s[0]||{type:'pass'};}
 
 function aiMove(st){
     const b=st.board,p=PB,e=PA,hasS=st.supplies[p].length>0;
     if(!hasS&&!hasStrikes(b,p))return{type:'pass'};
     if(!hasS)return aiBestStr(b,p);
     const fb=st.ko[p];
-    // Win/block
+
+    // Win/block checks
     for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:p,stack:[1],faceUp:[false]};if(checkQC(s,p))return{type:'deploy',r,c};}
     for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:e,stack:[1],faceUp:[false]};if(checkQC(s,e))return{type:'deploy',r,c};}
 
-    const myAx=aiAxis(b,p),eAx=aiAxis(b,e);
     const ownS=new Set(occCells(b,p).map(([r,c])=>`${r},${c}`));
-    const ctr=(N-1)/2;
     const moves=[];
 
+    // Deploy: Favor Center 3x3 and building non-branching lines
     for(const[r,c]of emptyCells(b)){
         if(fb&&fb.r===r&&fb.c===c)continue;
         let s=0;
-        // Adjacency
-        for(const[rr,cc]of orth(r,c))if(ownS.has(`${rr},${cc}`))s+=14;
-        // Connection direction
-        if(myAx.axis==='row'){
-            if(r>myAx.progress)s+=20; // beyond frontier
-            if(r===0||r===N-1)s+=10;
-            s+=4*(3-Math.abs(c-ctr)); // center column
-        }else{
-            if(c>myAx.progress)s+=20;
-            if(c===0||c===N-1)s+=10;
-            s+=4*(3-Math.abs(r-ctr));
+        const isCenter = (r>=2&&r<=4&&c>=2&&c<=4);
+        if(isCenter) s+=20;
+        else {
+            const distToCenter = Math.max(0, Math.abs(r-3)-1, Math.abs(c-3)-1);
+            s += (3 - distToCenter) * 6; // Gravity towards the center
         }
-        // Block enemy if they're close
-        if(eAx.gap<=2){
-            // Place near enemy frontier
-            if(eAx.axis==='row'){const d=Math.abs(r-eAx.progress);if(d<=1)s+=18;}
-            else{const d=Math.abs(c-eAx.progress);if(d<=1)s+=18;}
-        }
-        // Edge placement bonus for connection
-        if(r===0||r===N-1)s+=6;if(c===0||c===N-1)s+=6;
+        
+        let myAdj=0; for(const[rr,cc]of orth(r,c))if(ownS.has(`${rr},${cc}`))myAdj++;
+        if(myAdj===1) s+=18; // Perfect: extends a snake
+        if(myAdj>1) s+=6;  // Creates a branch (less ideal for snake, but blocks)
+        if(myAdj===0) s+=4;  // Isolated drop
+        
         moves.push({type:'deploy',r,c,score:s});
     }
+    
+    // Reinforce
     for(const[r,c]of occCells(b,p))if(ht(b[r][c])===1){let s=eAdj(b,p,r,c).length*18-4;moves.push({type:'reinforce',r,c,score:s});}
+    
+    // Strike
     for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c)){
         let aS=b[r][c].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])&&b[rr][cc].owner===p)aS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
         let dS=b[tr][tc].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(tr,tc))if(!mt(b[rr][cc])&&b[rr][cc].owner!==p)dS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
         let s=aS>dS?(aS-dS)*3+8:-(dS-aS)*4;
-        // Bonus for removing blocking tiles
-        if(myAx.axis==='row'&&Math.abs(tr-myAx.progress)<=1)s+=8;
-        if(myAx.axis==='col'&&Math.abs(tc-myAx.progress)<=1)s+=8;
+        if(tr>=2&&tr<=4&&tc>=2&&tc<=4) s+=12; // High priority to fight over the center
         moves.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:s});
     }
+    
     if(!moves.length)return{type:'pass'};
-    moves.sort((a,b)=>b.score-a.score);return moves[0];
+    moves.sort((a,b)=>b.score-a.score);
+    
+    // Add a tiny bit of variance so AI doesn't get stuck in loops
+    const best = moves[0].score;
+    const topMoves = moves.filter(m => m.score >= best - 2);
+    return topMoves[Math.floor(Math.random()*topMoves.length)];
 }
-function aiBestStr(b,p){const s=[];for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c))s.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:b[r][c].stack.reduce((a,v)=>a+v,0)});s.sort((a,b)=>b.score-a.score);return s[0]||{type:'pass'};}
 
 function execAI(st,room){
     if(st.currentPlayer!==PB||!st.isAiGame||st.phase==='GAME_OVER')return;
@@ -226,4 +231,4 @@ io.on('connection',(socket)=>{
     socket.on('disconnect',()=>{for(const rid of Object.keys(rooms))if(rid.startsWith('AI_')&&rooms[rid].p1===socket.id)delete rooms[rid];});
 });
 
-server.listen(process.env.PORT||3000,()=>console.log(`RANKS v0.6.2 on port ${process.env.PORT||3000}`));
+server.listen(process.env.PORT||3000,()=>console.log(`RANKS v0.6.3 on port ${process.env.PORT||3000}`));
