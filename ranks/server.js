@@ -21,6 +21,7 @@ function emptyCells(b){const o=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(mt(
 function eAdj(b,p,r,c){const o=[];for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])&&b[rr][cc].owner!==p)o.push([rr,cc]);return o;}
 function hasStrikes(b,p){for(const[r,c]of occCells(b,p))if(eAdj(b,p,r,c).length>0)return true;return false;}
 
+// V0.6.3 Best path qual score
 function bestPathQual(b,p){
     const nodes=[];
     for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
@@ -43,6 +44,7 @@ function bestPathQual(b,p){
     return best;
 }
 
+// V0.6.3 Qualified Path check: length >= 7, score >= 21, touches center 3x3
 function checkQC(b,p){
     const nodes=[];
     for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
@@ -81,6 +83,7 @@ function checkVic(st,atk){
     return false;
 }
 
+// Total face-up score (all tiles on board) - used for end scoring
 function totalFU(b,p){let s=0;for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)s+=fuScore(cl);}return s;}
 
 function finalByPass(st){
@@ -108,6 +111,7 @@ function resolveStrike(st,p,aR,aC,tR,tC){
     else{capC(aR,aC);capC(tR,tC);st.gameLog.unshift(`  Tie: both captured`);}
     st.ko={[PA]:null,[PB]:null};for(const cs of cap)st.ko[cs.owner]={r:cs.r,c:cs.c};
     st.lastMove={player:p,r:aR,c:aC};
+    // Track captured cells for animation
     st.lastCaptures=cap.map(c=>({r:c.r,c:c.c,owner:c.owner}));
     const ext=checkExt(st);if(ext!==null){st.winner=ext===PA?PB:PA;st.winCondition='Extermination';st.phase='GAME_OVER';return;}
     checkVic(st,p);
@@ -125,7 +129,8 @@ function stateView(st,viewer){
         return{owner:cl.owner,height:ht(cl),
             tiles:cl.stack.map((v,i)=>({value:cl.faceUp[i]?v:null,faceUp:cl.faceUp[i],owner:cl.owner}))};
     }));
-    const peekSet=st.peekedCells[viewer===PA?PB:PA];
+    // Peeked cells: send as array of "r,c" strings for the viewer
+    const peekSet=st.peekedCells[viewer===PA?PB:PA];// opponent's peeked cells visible to us
     const oppPeeked=peekSet?[...peekSet]:[];
     return{board:bv,supplies:{[PA]:st.supplies[PA].length,[PB]:st.supplies[PB].length},
         myNextDraw:st.supplies[viewer]?.[0]??null,currentPlayer:st.currentPlayer,phase:st.phase,
@@ -147,51 +152,64 @@ function bc(room){
 function bfsR(b,p,starts){const seen=new Set(starts.map(([r,c])=>`${r},${c}`));const q=[...starts];while(q.length){const[r,c]=q.shift();for(const[rr,cc]of orth(r,c)){const k=`${rr},${cc}`;if(!seen.has(k)&&!mt(b[rr][cc])&&b[rr][cc].owner===p){seen.add(k);q.push([rr,cc]);}}}return seen;}
 function aiBestStr(b,p){const s=[];for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c))s.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:b[r][c].stack.reduce((a,v)=>a+v,0)});s.sort((a,b)=>b.score-a.score);return s[0]||{type:'pass'};}
 
+// Aggressive V0.6.3 AI
 function aiMove(st, p){
     const b=st.board, e = (p===PA) ? PB : PA, hasS=st.supplies[p].length>0;
     if(!hasS&&!hasStrikes(b,p))return{type:'pass'};
     if(!hasS)return aiBestStr(b,p);
     const fb=st.ko[p];
 
-    for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:p,stack:[1],faceUp:[false]};if(checkQC(s,p))return{type:'deploy',r,c};}
-    for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:e,stack:[1],faceUp:[false]};if(checkQC(s,e))return{type:'deploy',r,c};}
+    // 1. Immediate Win/Block
+    for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:p,stack:[1],faceUp:[false]};if(checkQC(s,p))return{type:'deploy',r,c,score:999};}
+    for(const[r,c]of emptyCells(b)){if(fb&&fb.r===r&&fb.c===c)continue;const s=JSON.parse(JSON.stringify(b));s[r][c]={owner:e,stack:[1],faceUp:[false]};if(checkQC(s,e))return{type:'deploy',r,c,score:900};}
 
     const ownS=new Set(occCells(b,p).map(([r,c])=>`${r},${c}`));
     const moves=[];
 
+    // 2. Deploy (Favor Center 3x3)
     for(const[r,c]of emptyCells(b)){
         if(fb&&fb.r===r&&fb.c===c)continue;
         let s=0;
         const isCenter = (r>=2&&r<=4&&c>=2&&c<=4);
-        if(isCenter) s+=20;
+        if(isCenter) s+=25; // High priority for center
         else {
             const distToCenter = Math.max(0, Math.abs(r-3)-1, Math.abs(c-3)-1);
-            s += (3 - distToCenter) * 6;
+            s += (3 - distToCenter) * 5;
         }
-        
         let myAdj=0; for(const[rr,cc]of orth(r,c))if(ownS.has(`${rr},${cc}`))myAdj++;
-        if(myAdj===1) s+=18; 
-        if(myAdj>1) s+=6;  
+        if(myAdj===1) s+=15; // Extend snake
         if(myAdj===0) s+=4;  
-        
         moves.push({type:'deploy',r,c,score:s});
     }
     
-    for(const[r,c]of occCells(b,p))if(ht(b[r][c])===1){let s=eAdj(b,p,r,c).length*18-4;moves.push({type:'reinforce',r,c,score:s});}
+    // 3. Reinforce (Aggressive Stacking)
+    for(const[r,c]of occCells(b,p)){
+        if(ht(b[r][c])===1){
+            let eCount = eAdj(b,p,r,c).length;
+            // Massive boost to reinforce if touching an enemy
+            let s = eCount > 0 ? (eCount * 30 + 10) : 5; 
+            if(r>=2&&r<=4&&c>=2&&c<=4) s+= 15; // Reinforce the center even more
+            moves.push({type:'reinforce',r,c,score:s});
+        }
+    }
     
+    // 4. Strike (Willing to take slight risks)
     for(const[r,c]of occCells(b,p))for(const[tr,tc]of eAdj(b,p,r,c)){
         let aS=b[r][c].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])&&b[rr][cc].owner===p)aS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
         let dS=b[tr][tc].stack.reduce((a,v)=>a+v,0);for(const[rr,cc]of orth(tr,tc))if(!mt(b[rr][cc])&&b[rr][cc].owner!==p)dS+=b[rr][cc].stack.reduce((a,v)=>a+v,0);
-        let s=aS>dS?(aS-dS)*3+8:-(dS-aS)*4;
-        if(tr>=2&&tr<=4&&tc>=2&&tc<=4) s+=12; 
+        
+        // AI is now more willing to attack even if the math is close, to disrupt the player
+        let s = aS >= dS ? (aS-dS)*4 + 35 : -(dS-aS)*2; 
+        if(tr>=2&&tr<=4&&tc>=2&&tc<=4) s+=20; // Fight to the death over the center
         moves.push({type:'strike',atkR:r,atkC:c,tgtR:tr,tgtC:tc,score:s});
     }
     
     if(!moves.length)return{type:'pass'};
     moves.sort((a,b)=>b.score-a.score);
     
+    // Add variance so it isn't 100% predictable
     const best = moves[0].score;
-    const topMoves = moves.filter(m => m.score >= best - 2);
+    const topMoves = moves.filter(m => m.score >= best - 3);
     return topMoves[Math.floor(Math.random()*topMoves.length)];
 }
 
