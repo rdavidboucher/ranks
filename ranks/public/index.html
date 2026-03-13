@@ -54,15 +54,15 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 <input type="text" id="room-input" placeholder="ROOM CODE" autocomplete="off" onkeydown="if(event.key==='Enter')joinGame()" oninput="this.value=this.value.toUpperCase()">
 <button class="big-btn" onclick="joinGame()">JOIN GAME</button>
 <button id="lobby-create" onclick="createRoom()">CREATE ROOM</button>
-<p id="lobby-hint">Enter <b>PLAYAI</b> to challenge the AI &middot; Create or enter a room code for 2-player</p>
+<p id="lobby-hint">Enter <b>PLAYAI</b> to challenge the AI &middot; v0.6.3 (no stacks)</p>
 <p id="lobby-msg"></p>
 </div>
 <div id="game-container" class="hidden">
 <h1 class="title">RANKS</h1>
 <div id="hud">
-<div class="hud-s"><b>White (P1)</b><span>Supply: <span id="s1">24</span></span><span>Qual: <span class="qv" id="q1">0</span> / <span id="qt1">21</span></span></div>
+<div class="hud-s"><b>White (P1)</b><span>Supply: <span id="s1">24</span></span><span>Path Score: <span class="qv" id="q1">0</span> / <span id="qt1">21</span></span></div>
 <div class="hud-s"><b>You</b><span id="pid">...</span></div>
-<div class="hud-s"><b>Black (P2)</b><span>Supply: <span id="s2">24</span></span><span>Qual: <span class="qv" id="q2">0</span> / <span id="qt2">21</span></span></div>
+<div class="hud-s"><b>Black (P2)</b><span>Supply: <span id="s2">24</span></span><span>Path Score: <span class="qv" id="q2">0</span> / <span id="qt2">21</span></span></div>
 </div>
 <div id="status-msg">Waiting...</div>
 <div id="canvas-wrapper"><canvas id="cv" width="1020" height="1020"></canvas></div>
@@ -193,9 +193,6 @@ function draw(){
         if(pending.type==='deploy'){
             ctx.fillStyle=myP===1?'#f8f8f8':'#1a1a1a';roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.fill();
             if(myP===1){ctx.strokeStyle='#1a1a1a';ctx.lineWidth=3;roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.stroke();}
-        }else if(pending.type==='reinforce'){
-            ctx.strokeStyle='#3c78dc';ctx.lineWidth=4;roundRect(ctx,cx-TS/2-4,cy-TS/2-4,TS+8,TS+8,8);ctx.stroke();
-        }
         ctx.restore();
     }
     if(strikeFrom&&strikeTarget){
@@ -222,7 +219,6 @@ function drawGrid(){
         else if(state.phase==='ACTION'&&!pending&&!strikeTarget){
             const cl=b[r][c],ko=state.ko[myP];
             if(cl.tiles.length===0&&!(ko&&ko.r===r&&ko.c===c)&&state.supplies[myP]>0)hl='rgba(80,180,80,.08)';
-            else if(cl.owner===myP&&cl.tiles.length===1&&state.supplies[myP]>0)hl='rgba(60,120,220,.08)';
         }else if(state.phase==='ACTION'&&strikeTarget&&!strikeFrom){
             if(b[r][c].owner===myP&&b[r][c].tiles.length>0&&Math.abs(r-strikeTarget.r)+Math.abs(c-strikeTarget.c)===1)hl='rgba(192,57,43,.15)';
         }
@@ -236,9 +232,7 @@ function drawLabels(){ctx.fillStyle='#999';ctx.font=`600 ${Math.round(CL*.2)}px 
 function drawCell(r,c,cell){
     const cx=cX(c),cy=cY(r);
     if(!cell.tiles||cell.tiles.length===0)return; // no dots on empty cells
-    const isStk=cell.tiles.length===2,top=cell.tiles[cell.tiles.length-1];
-    // Stack shadow
-    if(isStk){ctx.save();ctx.globalAlpha=.3;drawTileShape(cx+4,cy+4,TS*.86,top.owner);ctx.restore();}
+    const top=cell.tiles[cell.tiles.length-1];
     drawTileShape(cx,cy,TS,top.owner);
 
     // Peeked indicator: small eye dot
@@ -249,17 +243,8 @@ function drawCell(r,c,cell){
 
     // Dots
     if(top.value!==null){
-        if(isStk){
-            // Stack: show combined as number (can exceed 6)
-            const total=cell.tiles.reduce((s,t)=>s+(t.value||0),0);
-            if(total<=6){drawPips(cx,cy,TS*.7,total,top.owner===1?'#1a1a1a':'#fff');}
-            else{ctx.font=`900 ${Math.round(TS*.42)}px Helvetica Neue,Arial,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=top.owner===1?'#1a1a1a':'#fff';ctx.fillText(String(total),cx,cy);}
-        }else{
-            drawPips(cx,cy,TS*.7,top.value,top.owner===1?'#1a1a1a':'#fff');
-        }
+        drawPips(cx,cy,TS*.7,top.value,top.owner===1?'#1a1a1a':'#fff');
     }
-    // Stack badge
-    if(isStk){ctx.fillStyle=var_gold;ctx.font=`800 ${Math.round(TS*.17)}px Helvetica Neue,Arial,sans-serif`;ctx.textAlign='right';ctx.textBaseline='top';ctx.fillText('\u00d72',cx+TS/2-2,cy-TS/2+2);}
     // Face-up glow
     if(top.faceUp){ctx.strokeStyle=var_gold;ctx.lineWidth=2.5;roundRect(ctx,cx-TS/2,cy-TS/2,TS,TS,6);ctx.stroke();}
     // Strike highlights
@@ -304,8 +289,6 @@ function handleClick(r,c){
         const se=state.supplies[myP]===0;
         // Empty = deploy
         if(cell.tiles.length===0&&!se){const ko=state.ko[myP];if(ko&&ko.r===r&&ko.c===c)return;pending={type:'deploy',r,c};updStatus();updBar();draw();return;}
-        // Own single = reinforce
-        if(cell.owner===myP&&cell.tiles.length===1&&!se){pending={type:'reinforce',r,c};updStatus();updBar();draw();return;}
         // Enemy = start strike
         if(cell.owner&&cell.owner!==myP&&cell.tiles.length>0){
             let has=false;for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){const rr=r+dr,cc=c+dc;if(rr>=0&&rr<BS&&cc>=0&&cc<BS&&b[rr][cc].owner===myP&&b[rr][cc].tiles.length>0)has=true;}
