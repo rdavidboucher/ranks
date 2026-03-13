@@ -32,10 +32,12 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 #rules-link{margin:8px 0;font-size:.82rem;}.rules-a{color:#888;text-decoration:none;font-weight:600;letter-spacing:1px;text-transform:uppercase;}.rules-a:hover{color:#333;}
 #game-over{position:fixed;inset:0;z-index:300;display:flex;justify-content:center;align-items:center;}
 #go-bd{position:absolute;inset:0;background:rgba(0,0,0,.55);}
-#go-bb{position:relative;background:#fff;border-radius:16px;padding:36px 32px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.25);max-width:420px;width:90%;}
+#go-bb{position:relative;background:#fff;border-radius:16px;padding:36px 32px 24px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.25);max-width:420px;width:90%;}
 #go-t{font-size:2.2rem;font-weight:900;letter-spacing:4px;margin-bottom:8px;}
 #go-r{font-size:.95rem;color:#555;margin-bottom:18px;line-height:1.5;}
 .go-b{padding:14px 28px;font-size:1rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;background:#1a1a1a;color:#fff;}
+.subtle-btn{background:transparent;color:#888;border:1px solid #ddd;padding:8px 16px;border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;margin-top:16px;letter-spacing:1px;transition:all 0.2s;}
+.subtle-btn:hover{color:#333;border-color:#999;}
 #pie-overlay{position:fixed;inset:0;background:rgba(234,232,228,.96);display:flex;justify-content:center;align-items:center;z-index:250;}
 #pie-bb{background:#fff;border-radius:16px;padding:28px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.2);}
 .pb{padding:14px 28px;font-size:1.1rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;margin:6px;}.ps{background:#1a1a1a;color:#fff;}.pc{background:#eee;color:#333;}
@@ -70,7 +72,15 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 <div id="rules-link"><a class="rules-a" href="rules.html" target="_blank">Rules &rarr;</a></div>
 <div id="combat-log" class="hidden"><div id="ll"></div></div>
 </div>
-<div id="game-over" class="hidden"><div id="go-bd"></div><div id="go-bb"><div id="go-t">GAME OVER</div><div id="go-r"></div><div><button class="go-b" onclick="location.reload()">MAIN MENU</button></div></div></div>
+<div id="game-over" class="hidden">
+    <div id="go-bd"></div>
+    <div id="go-bb">
+        <div id="go-t">GAME OVER</div>
+        <div id="go-r"></div>
+        <div><button class="go-b" onclick="location.reload()">MAIN MENU</button></div>
+        <div><button class="subtle-btn" id="go-copy" onclick="copyLog()">COPY GAME LOG</button></div>
+    </div>
+</div>
 <div id="pie-overlay" class="hidden"><div id="pie-bb"><h3 style="margin-bottom:12px">The Pie Rule</h3><p style="margin-bottom:16px">Your opponent placed the opening tile.<br>You may <b>SWAP</b> sides or <b>CONTINUE</b> as P2.</p><div><button class="pb ps" onclick="sendPie(true)">SWAP</button><button class="pb pc" onclick="sendPie(false)">CONTINUE</button></div></div></div>
 <div id="peek-flash" class="hidden"></div>
 <div id="waiting-msg" class="hidden">Waiting for opponent...</div>
@@ -81,7 +91,6 @@ const BS=7,CW=1020,MG=60,BPX=CW-MG*2,CL=BPX/BS,TS=CL*.72;
 function cX(c){return MG+c*CL+CL/2;}function cY(r){return MG+r*CL+CL/2;}
 function $(id){return document.getElementById(id);}
 
-// Pip positions for domino/dice style (1-6)
 const PIPS={
 1:[[.5,.5]],
 2:[[.25,.25],[.75,.75]],
@@ -209,7 +218,6 @@ function updBar(){
             return;
         }
 
-        // Normal confirm (deploy, reinforce, strike, place)
         mkBtn(bar, 'CONFIRM', 'ab go', () => {
             if (p === 'PEEK' && pending.type !== 'place') socket.emit('action', {roomId, type: 'skipPeek'});
             socket.emit('action', {roomId, ...pending});
@@ -237,6 +245,18 @@ function mkBtn(p,txt,cls,fn){const b=document.createElement('button');b.classNam
 function hasStr(){if(!state)return false;const b=state.board;for(let r=0;r<BS;r++)for(let c=0;c<BS;c++)if(b[r][c].owner===myP&&b[r][c].tiles.length>0)for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){const rr=r+dr,cc=c+dc;if(rr>=0&&rr<BS&&cc>=0&&cc<BS&&b[rr][cc].owner&&b[rr][cc].owner!==myP&&b[rr][cc].tiles.length>0)return true;}return false;}
 
 function updLog(){if(!state||!state.gameLog||!state.gameLog.length)return;$('combat-log').classList.remove('hidden');$('ll').innerHTML=state.gameLog.map(l=>`<div>${l}</div>`).join('');}
+
+function copyLog() {
+    if(!state || !state.gameLog) return;
+    const txt = state.gameLog.slice().reverse().join('\n');
+    navigator.clipboard.writeText(txt).then(() => {
+        const btn = $('go-copy');
+        btn.innerText = 'COPIED!';
+        setTimeout(() => btn.innerText = 'COPY GAME LOG', 2000);
+    }).catch(err => {
+        console.error("Failed to copy log", err);
+    });
+}
 
 function phaseUI(){if(!state)return;$('pie-overlay').classList.toggle('hidden',!(state.phase==='PIE_DECISION'&&myP===2));
     if(state.phase==='GAME_OVER'){clearS();const w=state.winner;let t,r;if(!w){t='DRAW';r=state.winCondition||'';}else{t=w===myP?'YOU WIN':'YOU LOSE';r=`${w===1?'White':'Black'} wins: ${state.winCondition}`;}$('go-t').innerText=t;$('go-r').innerText=r;$('game-over').classList.remove('hidden');}}
@@ -302,11 +322,8 @@ function drawGrid(){
     const b=state.board;
     for(let r=0;r<BS;r++)for(let c=0;c<BS;c++){
         let hl=null;
-        if((state.phase==='PEEK' || state.phase==='ACTION') && !pending && !strikeTarget){
-            const cl=b[r][c],ko=state.ko[myP];
-            if(state.phase==='PEEK' && cl.owner===myP&&cl.tiles.length>0&&cl.tiles.some(t=>!t.faceUp)) hl='rgba(160,80,200,.15)';
-            else if(cl.tiles.length===0&&!(ko&&ko.r===r&&ko.c===c)&&state.supplies[myP]>0) hl='rgba(80,180,80,.08)';
-            else if(cl.owner===myP&&cl.tiles.length===1&&state.supplies[myP]>0) hl='rgba(60,120,220,.08)';
+        if(state.phase==='PEEK' && !pending && !strikeTarget){
+            if(b[r][c].owner===myP&&b[r][c].tiles.length>0&&b[r][c].tiles.some(t=>!t.faceUp)) hl='rgba(160,80,200,.15)';
         }else if((state.phase==='PEEK' || state.phase==='ACTION') && strikeTarget && !strikeFrom){
             if(b[r][c].owner===myP&&b[r][c].tiles.length>0&&Math.abs(r-strikeTarget.r)+Math.abs(c-strikeTarget.c)===1)hl='rgba(192,57,43,.15)';
         }
