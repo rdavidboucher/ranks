@@ -38,9 +38,6 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 .go-b{padding:14px 28px;font-size:1rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;background:#1a1a1a;color:#fff;}
 .subtle-btn{background:transparent;color:#888;border:1px solid #ddd;padding:8px 16px;border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;margin-top:16px;letter-spacing:1px;transition:all 0.2s;}
 .subtle-btn:hover{color:#333;border-color:#999;}
-#pie-overlay{position:fixed;inset:0;background:rgba(234,232,228,.96);display:flex;justify-content:center;align-items:center;z-index:250;}
-#pie-bb{background:#fff;border-radius:16px;padding:28px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.2);}
-.pb{padding:14px 28px;font-size:1.1rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;margin:6px;}.ps{background:#1a1a1a;color:#fff;}.pc{background:#eee;color:#333;}
 #peek-flash{position:fixed;top:16%;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:16px 32px;border-radius:40px;font-weight:900;font-size:1.05rem;letter-spacing:2px;z-index:300;box-shadow:0 6px 28px rgba(0,0,0,.3);transition:opacity .4s;}
 #waiting-msg{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:var(--ui);color:#555;padding:14px 28px;border-radius:40px;font-weight:700;z-index:200;box-shadow:var(--sh);}
 @keyframes shake{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}60%{transform:translate(-3px,3px)}80%{transform:translate(3px,-1px)}}
@@ -81,7 +78,6 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
         <div><button class="subtle-btn" id="go-copy" onclick="copyLog()">COPY GAME LOG</button></div>
     </div>
 </div>
-<div id="pie-overlay" class="hidden"><div id="pie-bb"><h3 style="margin-bottom:12px">The Pie Rule</h3><p style="margin-bottom:16px">Your opponent placed the opening tile.<br>You may <b>SWAP</b> sides or <b>CONTINUE</b> as P2.</p><div><button class="pb ps" onclick="sendPie(true)">SWAP</button><button class="pb pc" onclick="sendPie(false)">CONTINUE</button></div></div></div>
 <div id="peek-flash" class="hidden"></div>
 <div id="waiting-msg" class="hidden">Waiting for opponent...</div>
 <script>
@@ -116,7 +112,7 @@ socket.on('rejoinFailed',()=>{clearS();$('game-container').classList.add('hidden
 
 function joinGame(){const v=$('room-input').value.toUpperCase().trim();if(!v)return;roomId=v;socket.emit('joinGame',roomId);}
 function createRoom(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ',code=Array.from({length:4},()=>c[Math.floor(Math.random()*c.length)]).join('');$('room-input').value=code;$('lobby-msg').innerText=`Room ${code} created.`;}
-function sendPie(sw){socket.emit('action',{roomId,type:'pieDecision',swap:sw});$('pie-overlay').classList.add('hidden');}
+function sendPie(sw){socket.emit('action',{roomId,type:'pieDecision',swap:sw});}
 
 socket.on('init',d=>{myP=d.player;if(d.roomId)roomId=d.roomId;saveS();$('lobby-screen').classList.add('hidden');$('game-container').classList.remove('hidden');$('waiting-msg').classList.add('hidden');$('pid').innerText=myP===1?'White (P1)':'Black (P2)';draw();});
 socket.on('waiting',()=>{$('lobby-screen').classList.add('hidden');$('game-container').classList.remove('hidden');$('waiting-msg').classList.remove('hidden');});
@@ -180,7 +176,7 @@ function updND(){
 
 function updStatus(){if(!state)return;const el=$('status-msg'),me=state.currentPlayer===myP,p=state.phase;
     if(p==='PIE_PLACE')el.innerText=me?'PLACE OPENING TILE':'OPPONENT PLACING...';
-    else if(p==='PIE_DECISION')el.innerText=myP===2?'SWAP OR CONTINUE?':'OPPONENT DECIDING...';
+    else if(p==='PIE_DECISION')el.innerText=me?'PIE RULE: SWAP OR CONTINUE?':'OPPONENT DECIDING...';
     else if(p==='PEEK' || p==='ACTION'){
         if(!me) el.innerText="OPPONENT'S TURN";
         else if(pending) {
@@ -195,6 +191,13 @@ function updStatus(){if(!state)return;const el=$('status-msg'),me=state.currentP
 function updBar(){
     const bar=$('action-bar');bar.innerHTML='';if(!state)return;const me=state.currentPlayer===myP,p=state.phase;
     
+    // Pie Decision Buttons integrated right into the Action Bar
+    if(p === 'PIE_DECISION' && me){
+        mkBtn(bar, 'SWAP (TAKE WHITE)', 'ab go', () => sendPie(true));
+        mkBtn(bar, 'CONTINUE (STAY BLACK)', 'ab', () => sendPie(false));
+        return;
+    }
+
     if(me && pending){
         if(pending.type === 'peek_or_reinforce'){
             mkBtn(bar, 'PEEK', 'ab', () => {
@@ -258,7 +261,7 @@ function copyLog() {
     });
 }
 
-function phaseUI(){if(!state)return;$('pie-overlay').classList.toggle('hidden',!(state.phase==='PIE_DECISION'&&myP===2));
+function phaseUI(){if(!state)return;
     if(state.phase==='GAME_OVER'){clearS();const w=state.winner;let t,r;if(!w){t='DRAW';r=state.winCondition||'';}else{t=w===myP?'YOU WIN':'YOU LOSE';r=`${w===1?'White':'Black'} wins: ${state.winCondition}`;}$('go-t').innerText=t;$('go-r').innerText=r;$('game-over').classList.remove('hidden');}}
 
 // ═══ DRAWING ═══
