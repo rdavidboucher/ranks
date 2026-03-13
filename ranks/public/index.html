@@ -58,9 +58,9 @@ canvas{width:100%;height:100%;display:block;border-radius:8px;}
 <div id="game-container" class="hidden">
 <h1 class="title">RANKS</h1>
 <div id="hud">
-<div class="hud-s"><b>White (P1)</b><span>Supply: <span id="s1">24</span></span><span>Qual: <span class="qv" id="q1">0</span> / <span id="qt1">21</span></span></div>
+<div class="hud-s"><b>White (P1)</b><span>Supply: <span id="s1">24</span></span><span>Path: <span class="qv" id="q1">0</span>/21 pt &nbsp;|&nbsp; <span class="qv" id="l1">0</span>/7 len</span></div>
 <div class="hud-s"><b>You</b><span id="pid">...</span></div>
-<div class="hud-s"><b>Black (P2)</b><span>Supply: <span id="s2">24</span></span><span>Qual: <span class="qv" id="q2">0</span> / <span id="qt2">21</span></span></div>
+<div class="hud-s"><b>Black (P2)</b><span>Supply: <span id="s2">24</span></span><span>Path: <span class="qv" id="q2">0</span>/21 pt &nbsp;|&nbsp; <span class="qv" id="l2">0</span>/7 len</span></div>
 </div>
 <div id="status-msg">Waiting...</div>
 <div id="canvas-wrapper"><canvas id="cv" width="1020" height="1020"></canvas></div>
@@ -136,11 +136,21 @@ function animCaptures(caps){
     }
 }
 
-function updateAll(){if(!state)return;$('waiting-msg').classList.add('hidden');$('s1').innerText=state.supplies[1];$('s2').innerText=state.supplies[2];
-    const qs=state.qualScores||{};$('q1').innerText=qs[1]||0;$('q2').innerText=qs[2]||0;
-    const qt=state.qualThreshold||21;$('qt1').innerText=qt;$('qt2').innerText=qt;
-    updND();updStatus();updBar();updLog();draw();phaseUI();}
-
+function updateAll(){
+    if(!state)return;
+    $('waiting-msg').classList.add('hidden');
+    $('s1').innerText=state.supplies[1];
+    $('s2').innerText=state.supplies[2];
+    
+    // Inject both Score and Length into the HUD
+    const qs=state.qualScores||{};
+    $('q1').innerText=qs[1]?.sc||0; 
+    $('l1').innerText=qs[1]?.len||0;
+    $('q2').innerText=qs[2]?.sc||0; 
+    $('l2').innerText=qs[2]?.len||0;
+    
+    updND();updStatus();updBar();updLog();draw();phaseUI();
+}
 function updND(){
     const el=$('next-draw');
     if(!state||state.myNextDraw===null){

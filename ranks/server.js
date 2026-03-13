@@ -22,26 +22,39 @@ function eAdj(b,p,r,c){const o=[];for(const[rr,cc]of orth(r,c))if(!mt(b[rr][cc])
 function hasStrikes(b,p){for(const[r,c]of occCells(b,p))if(eAdj(b,p,r,c).length>0)return true;return false;}
 
 // V0.6.3 Best path qual score
-function bestPathQual(b,p){
+function bestPathStats(b,p){
     const nodes=[];
     for(let r=0;r<N;r++)for(let c=0;c<N;c++){const cl=b[r][c];if(!mt(cl)&&cl.owner===p)nodes.push({r,c,sc:fuScore(cl)});}
-    if(!nodes.length)return 0;
-    let best=0,it=0;
+    if(!nodes.length)return {sc:0, len:0};
+    
+    let bestSc=0, bestLen=0, it=0;
     const vis=Array(N).fill(0).map(()=>Array(N).fill(false));
-    function dfs(r,c,sc){
+    
+    function dfs(r,c,len,sc,hasCtr){
         if(++it>500000)return;
-        if(sc>best)best=sc;
+        if(hasCtr){
+            if(sc > bestSc || (sc === bestSc && len > bestLen)){
+                bestSc = sc; bestLen = len;
+            }
+        }
         for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){
             const nr=r+dr,nc=c+dc;
             if(inB(nr,nc)&&!vis[nr][nc]&&!mt(b[nr][nc])&&b[nr][nc].owner===p){
                 vis[nr][nc]=true;
-                dfs(nr,nc,sc+fuScore(b[nr][nc]));
+                const cCtr=hasCtr||(nr>=2&&nr<=4&&nc>=2&&nc<=4);
+                dfs(nr,nc,len+1,sc+fuScore(b[nr][nc]),cCtr);
                 vis[nr][nc]=false;
             }
         }
     }
-    for(const n of nodes){vis[n.r][n.c]=true;dfs(n.r,n.c,n.sc);vis[n.r][n.c]=false;}
-    return best;
+    
+    for(const n of nodes){
+        vis[n.r][n.c]=true;
+        const cCtr=(n.r>=2&&n.r<=4&&n.c>=2&&n.c<=4);
+        dfs(n.r,n.c,1,n.sc,cCtr);
+        vis[n.r][n.c]=false;
+    }
+    return {sc:bestSc, len:bestLen};
 }
 
 // V0.6.3 Qualified Path check: length >= 7, score >= 21, touches center 3x3
@@ -130,18 +143,18 @@ function stateView(st,viewer){
             tiles:cl.stack.map((v,i)=>({value:cl.faceUp[i]?v:null,faceUp:cl.faceUp[i],owner:cl.owner}))};
     }));
     // Peeked cells: send as array of "r,c" strings for the viewer
-    const peekSet=st.peekedCells[viewer===PA?PB:PA];// opponent's peeked cells visible to us
+    const peekSet=st.peekedCells[viewer===PA?PB:PA]; // opponent's peeked cells visible to us
     const oppPeeked=peekSet?[...peekSet]:[];
     return{board:bv,supplies:{[PA]:st.supplies[PA].length,[PB]:st.supplies[PB].length},
         myNextDraw:st.supplies[viewer]?.[0]??null,currentPlayer:st.currentPlayer,phase:st.phase,
         winner:st.winner,winCondition:st.winCondition,graveyard:st.graveyard,ko:st.ko,
         lastMove:st.lastMove,lastCaptures:st.lastCaptures||[],peekDone:st.peekDone,passesInRow:st.passesInRow,
-        gameLog:st.gameLog.slice(0,50),isAiGame:st.isAiGame,qualThreshold:QUAL,boardSize:N,
-        qualScores:{[PA]:bestPathQual(st.board,PA),[PB]:bestPathQual(st.board,PB)},
+        gameLog:st.gameLog, // <--- REMOVED .slice(0,50) HERE
+        isAiGame:st.isAiGame,qualThreshold:QUAL,boardSize:N,
+        qualScores:{[PA]:bestPathStats(st.board,PA),[PB]:bestPathStats(st.board,PB)},
         oppPeeked,
     };
 }
-
 function bc(room){
     const st=room.state;
     if(room.p1 && room.p1!=='AI') io.to(room.p1).emit('update',stateView(st,PA));
